@@ -48,7 +48,8 @@ export class UserService {
     const user = this.userRepo.create({
       ...dto,
       password: await hashContent(pswd),
-      pin: await hashContent(pin),
+      ...(pin ? { pin: await hashContent(pin) } : {}),
+      // pin: await hashContent(pin),
       ...(employee ? { employee: { id: employee.id } } : {}),
       ...(company ? { company: { id: company?.id } } : {}),
     });
