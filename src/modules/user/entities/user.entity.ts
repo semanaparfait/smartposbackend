@@ -15,6 +15,7 @@ import {
 
 export enum UserRole {
   SUPERADMIN = 'SUPERADMIN',
+  ADMIN = 'ADMIN',
   OWNER = 'OWNER',
   EMPLOYEE = 'EMPLOYEE',
 }
