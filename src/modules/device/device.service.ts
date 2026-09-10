@@ -124,7 +124,9 @@ export class DeviceService {
     userId?: string,
     role?: UserRole,
   ) {
-    const company = userId ? await this.getUserCompany(userId, role) : undefined;
+    const company = userId
+      ? await this.getUserCompany(userId, role)
+      : undefined;
 
     const device = await this.findOne({
       ...where,

@@ -34,15 +34,21 @@ export class AuthService {
     if (user.role === UserRole.EMPLOYEE)
       throw new UnauthorizedException('Employees must login using PIN');
 
-    if (!user.company) {
-      throw new UnauthorizedException('User is not assigned to a company');
-    }
+    if (user.role !== UserRole.SUPERADMIN) {
+      if (!user.company) {
+        throw new UnauthorizedException('User is not assigned to a company');
+      }
 
-    await this.deviceService.getOne({
-      deviceId: dto.deviceId,
-      registrationStatus: RegistrationStatusEnum.REGISTERED,
-      company: { id: user.company.id },
-    });
+      if (!dto.deviceId) {
+        throw new UnauthorizedException('Device ID is required');
+      }
+
+      await this.deviceService.getOne({
+        deviceId: dto.deviceId,
+        registrationStatus: RegistrationStatusEnum.REGISTERED,
+        company: { id: user.company.id },
+      });
+    }
 
     const validPassword = await compareHashContent(dto.password, user.password);
 
