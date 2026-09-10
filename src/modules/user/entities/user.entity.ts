@@ -14,7 +14,7 @@ import {
 } from 'typeorm';
 
 export enum UserRole {
-  ADMIN = 'ADMIN',
+  SUPERADMIN = 'SUPERADMIN',
   OWNER = 'OWNER',
   EMPLOYEE = 'EMPLOYEE',
 }

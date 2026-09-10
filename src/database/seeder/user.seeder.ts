@@ -19,7 +19,7 @@ export class UserSeeder {
         email: 'admin.sema@gmail.com',
         phone: '+567613473984179',
         password: '123',
-        role: UserRole.ADMIN,
+        role: UserRole.SUPERADMIN,
       },
     ];
 

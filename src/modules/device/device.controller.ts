@@ -22,7 +22,7 @@ import { DeviceIdParam } from './dto/request/device-param.dto';
 
 @ApiTags('Devices')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles(UserRole.OWNER, UserRole.ADMIN)
+@Roles(UserRole.OWNER, UserRole.SUPERADMIN)
 @Controller('devices')
 @ApiBearerAuth()
 export class DeviceController {
@@ -49,36 +49,41 @@ export class DeviceController {
     @Param() { deviceId }: DeviceIdParam,
     @Body() dto: HandleDeviceRequestDto,
   ) {
-    return this.service.handleRegistration(user.sub, deviceId, dto.action);
+    return this.service.handleRegistration(
+      user.sub,
+      user.role,
+      deviceId,
+      dto.action,
+    );
   }
 
   @Patch(':deviceId/enable')
   @ApiOperation({ summary: 'Enable device' })
   enable(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
-    return this.service.enableDevice(user.sub, deviceId);
+    return this.service.enableDevice(user.sub, user.role, deviceId);
   }
 
   @Patch(':deviceId/disable')
   @ApiOperation({ summary: 'Disable device' })
   disable(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
-    return this.service.disableDevice(user.sub, deviceId);
+    return this.service.disableDevice(user.sub, user.role, deviceId);
   }
 
   @Get()
   @ApiOperation({ summary: 'Get all devices' })
   findAll(@User() user: Payload) {
-    return this.service.findAll(user.sub);
+    return this.service.findAll(user.sub, user.role);
   }
 
   @Get(':deviceId')
   @ApiOperation({ summary: 'Get device by id' })
   findOne(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
-    return this.service.getOne({ deviceId }, user.sub);
+    return this.service.getOne({ deviceId }, user.sub, user.role);
   }
 
   @Delete(':deviceId/delete')
   @ApiOperation({ summary: 'Delete device' })
   remove(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
-    return this.service.remove(user.sub, deviceId);
+    return this.service.remove(user.sub, user.role, deviceId);
   }
 }

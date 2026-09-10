@@ -8,8 +8,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { Device, RegistrationStatusEnum } from './entities/device.entity';
 import { CreateDeviceDto } from './dto/request/create-device.dto';
-import { UpdateDeviceDto } from './dto/request/update-device.dto';
 import { CompanyService } from '../company/company.service';
+import { UserRole } from '../user/entities/user.entity';
 
 @Injectable()
 export class DeviceService {
@@ -58,10 +58,11 @@ export class DeviceService {
 
   async handleRegistration(
     userId: string,
+    role: UserRole,
     deviceId: string,
     action: 'APPROVE' | 'REJECT',
   ) {
-    const device = await this.getOne({ deviceId }, userId);
+    const device = await this.getOne({ deviceId }, userId, role);
 
     if (!device.company) {
       throw new BadRequestException('Device has no registration request');
@@ -76,8 +77,8 @@ export class DeviceService {
     return this.deviceRepo.save(device);
   }
 
-  async enableDevice(userId: string, deviceId: string) {
-    const device = await this.getOne({ deviceId }, userId);
+  async enableDevice(userId: string, role: UserRole, deviceId: string) {
+    const device = await this.getOne({ deviceId }, userId, role);
 
     if (device.registrationStatus !== RegistrationStatusEnum.DISABLED) {
       throw new BadRequestException('Only disabled devices can be enabled');
@@ -88,8 +89,8 @@ export class DeviceService {
     return this.deviceRepo.save(device);
   }
 
-  async disableDevice(userId: string, deviceId: string) {
-    const device = await this.getOne({ deviceId }, userId);
+  async disableDevice(userId: string, role: UserRole, deviceId: string) {
+    const device = await this.getOne({ deviceId }, userId, role);
 
     if (device.registrationStatus !== RegistrationStatusEnum.REGISTERED) {
       throw new BadRequestException('Only registered devices can be disabled');
@@ -100,11 +101,11 @@ export class DeviceService {
     return this.deviceRepo.save(device);
   }
 
-  async findAll(userId: string) {
-    const company = await this.getUserCompany(userId);
+  async findAll(userId: string, role: UserRole) {
+    const company = await this.getUserCompany(userId, role);
 
     return await this.deviceRepo.find({
-      where: { company: { id: company.id } },
+      where: company ? { company: { id: company.id } } : {},
       relations: { company: true },
       order: { createdAt: 'DESC' },
     });
@@ -118,8 +119,12 @@ export class DeviceService {
     });
   }
 
-  async getOne(where: FindOptionsWhere<Device>, userId?: string) {
-    const company = userId ? await this.getUserCompany(userId) : undefined;
+  async getOne(
+    where: FindOptionsWhere<Device>,
+    userId?: string,
+    role?: UserRole,
+  ) {
+    const company = userId ? await this.getUserCompany(userId, role) : undefined;
 
     const device = await this.findOne({
       ...where,
@@ -131,12 +136,14 @@ export class DeviceService {
     return device;
   }
 
-  async remove(userId: string, deviceId: string) {
-    const device = await this.getOne({ deviceId }, userId);
+  async remove(userId: string, role: UserRole, deviceId: string) {
+    const device = await this.getOne({ deviceId }, userId, role);
     return this.deviceRepo.remove(device);
   }
 
-  private async getUserCompany(userId: string) {
+  private async getUserCompany(userId: string, role?: UserRole) {
+    if (role === UserRole.SUPERADMIN) return undefined;
+
     const company = await this.companyService.findOne({
       users: { id: userId },
     });
