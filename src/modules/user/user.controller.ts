@@ -20,7 +20,7 @@ import { UserIdParam } from './dto/request/user-param.dto';
 @ApiTags('Users')
 @Controller('user')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
+@Roles(UserRole.SUPERADMIN)
 @ApiBearerAuth()
 export class UserController {
   constructor(private readonly service: UserService) {}

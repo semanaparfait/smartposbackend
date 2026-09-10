@@ -20,7 +20,7 @@ import { CompanyIdParam } from './dto/request/company-param.dto';
 @ApiTags('Companies')
 @Controller('companies')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
+@Roles(UserRole.SUPERADMIN)
 @ApiBearerAuth()
 export class CompanyController {
   constructor(private readonly service: CompanyService) {}
