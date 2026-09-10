@@ -2,14 +2,13 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { Device, RegistrationStatusEnum } from './entities/device.entity';
-import { Company } from '../company/entities/company.entity';
 import { CreateDeviceDto } from './dto/request/create-device.dto';
 import { UpdateDeviceDto } from './dto/request/update-device.dto';
-import { UserService } from '../user/user.service';
 import { CompanyService } from '../company/company.service';
 
 @Injectable()
@@ -59,10 +58,10 @@ export class DeviceService {
 
   async handleRegistration(
     userId: string,
-    id: string,
+    deviceId: string,
     action: 'APPROVE' | 'REJECT',
   ) {
-    const device = await this.getOne({ id }, userId);
+    const device = await this.getOne({ deviceId }, userId);
 
     if (!device.company) {
       throw new BadRequestException('Device has no registration request');
@@ -72,14 +71,13 @@ export class DeviceService {
       device.registrationStatus = RegistrationStatusEnum.REGISTERED;
     } else {
       device.registrationStatus = RegistrationStatusEnum.REJECTED;
-      device.company = null as any; // detach company
     }
 
     return this.deviceRepo.save(device);
   }
 
-  async enableDevice(userId: string, id: string) {
-    const device = await this.getOne({ id }, userId);
+  async enableDevice(userId: string, deviceId: string) {
+    const device = await this.getOne({ deviceId }, userId);
 
     if (device.registrationStatus !== RegistrationStatusEnum.DISABLED) {
       throw new BadRequestException('Only disabled devices can be enabled');
@@ -90,8 +88,8 @@ export class DeviceService {
     return this.deviceRepo.save(device);
   }
 
-  async disableDevice(userId: string, id: string) {
-    const device = await this.getOne({ id }, userId);
+  async disableDevice(userId: string, deviceId: string) {
+    const device = await this.getOne({ deviceId }, userId);
 
     if (device.registrationStatus !== RegistrationStatusEnum.REGISTERED) {
       throw new BadRequestException('Only registered devices can be disabled');
@@ -103,12 +101,10 @@ export class DeviceService {
   }
 
   async findAll(userId: string) {
-    const company = await this.companyService.findOne({
-      users: { id: userId },
-    });
+    const company = await this.getUserCompany(userId);
 
     return await this.deviceRepo.find({
-      where: { ...(company ? { company: { id: company.id } } : {}) },
+      where: { company: { id: company.id } },
       relations: { company: true },
       order: { createdAt: 'DESC' },
     });
@@ -123,11 +119,7 @@ export class DeviceService {
   }
 
   async getOne(where: FindOptionsWhere<Device>, userId?: string) {
-    let company;
-    if (userId)
-      company = await this.companyService.findOne({
-        users: { id: userId },
-      });
+    const company = userId ? await this.getUserCompany(userId) : undefined;
 
     const device = await this.findOne({
       ...where,
@@ -139,8 +131,20 @@ export class DeviceService {
     return device;
   }
 
-  async remove(userId: string, id: string) {
-    const device = await this.getOne({ id }, userId);
+  async remove(userId: string, deviceId: string) {
+    const device = await this.getOne({ deviceId }, userId);
     return this.deviceRepo.remove(device);
+  }
+
+  private async getUserCompany(userId: string) {
+    const company = await this.companyService.findOne({
+      users: { id: userId },
+    });
+
+    if (!company) {
+      throw new UnauthorizedException('User is not assigned to a company');
+    }
+
+    return company;
   }
 }
