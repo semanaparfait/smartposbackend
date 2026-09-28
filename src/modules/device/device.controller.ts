@@ -78,7 +78,7 @@ export class DeviceController {
   @Get(':deviceId')
   @ApiOperation({ summary: 'Get device by id' })
   findOne(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
-    return this.service.getOne({ deviceId }, user.sub, user.role);
+    return this.service.getOne({ id: deviceId }, user.sub, user.role);
   }
 
   @Delete(':deviceId/delete')

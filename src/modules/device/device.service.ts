@@ -62,7 +62,7 @@ export class DeviceService {
     deviceId: string,
     action: 'APPROVE' | 'REJECT',
   ) {
-    const device = await this.getOne({ deviceId }, userId, role);
+    const device = await this.getById(deviceId, userId, role);
 
     if (!device.company) {
       throw new BadRequestException('Device has no registration request');
@@ -78,7 +78,7 @@ export class DeviceService {
   }
 
   async enableDevice(userId: string, role: UserRole, deviceId: string) {
-    const device = await this.getOne({ deviceId }, userId, role);
+    const device = await this.getById(deviceId, userId, role);
 
     if (device.registrationStatus !== RegistrationStatusEnum.DISABLED) {
       throw new BadRequestException('Only disabled devices can be enabled');
@@ -90,7 +90,7 @@ export class DeviceService {
   }
 
   async disableDevice(userId: string, role: UserRole, deviceId: string) {
-    const device = await this.getOne({ deviceId }, userId, role);
+    const device = await this.getById(deviceId, userId, role);
 
     if (device.registrationStatus !== RegistrationStatusEnum.REGISTERED) {
       throw new BadRequestException('Only registered devices can be disabled');
@@ -139,8 +139,12 @@ export class DeviceService {
   }
 
   async remove(userId: string, role: UserRole, deviceId: string) {
-    const device = await this.getOne({ deviceId }, userId, role);
+    const device = await this.getById(deviceId, userId, role);
     return this.deviceRepo.remove(device);
+  }
+
+  private async getById(deviceId: string, userId: string, role: UserRole) {
+    return this.getOne({ id: deviceId }, userId, role);
   }
 
   private async getUserCompany(userId: string, role?: UserRole) {
