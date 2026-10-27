@@ -22,7 +22,11 @@ import { Item } from '../item/entities/item.entity';
 import { ItemService } from '../item/item.service';
 import { UserService } from '../user/user.service';
 import { Payload } from 'src/util/token.service';
-import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
+import {
+  companyWhere,
+  ownRecordsWhere,
+  targetCompanyId,
+} from 'src/common/utils/company-scope';
 
 @Injectable()
 export class CartService {
@@ -56,23 +60,26 @@ export class CartService {
     const cart = this.cartRepo.create({
       status: CartStatusEnum.ACTIVE,
       company: { id: companyId },
+      user: { id: user.sub },
       seat,
     });
 
     return this.cartRepo.save(cart);
   }
 
+  // Employees see the carts they opened, owners their company's, super admin everything.
   async findCarts(user: Payload, companyId?: string) {
     return this.cartRepo.find({
-      where: companyWhere(user, companyId),
-      relations: { items: { product: { images: true } } },
+      where: { ...companyWhere(user, companyId), ...ownRecordsWhere(user) },
+      relations: { items: { product: { images: true } }, user: true },
       order: {
         createdAt: 'DESC',
       },
     });
   }
 
-  // When called on behalf of a user, `where` must include the company scope.
+  // When called on behalf of a user, `where` must include the company and
+  // own-records scope.
   async getCart(where: FindOptionsWhere<Cart>, manager?: EntityManager) {
     const repo = manager ? manager.getRepository(Cart) : this.cartRepo;
 
@@ -105,6 +112,7 @@ export class CartService {
           id: cartId,
           status: CartStatusEnum.ACTIVE,
           ...companyWhere(actor),
+          ...ownRecordsWhere(actor),
         },
         relations: { items: { product: true }, company: true },
       });
@@ -142,6 +150,7 @@ export class CartService {
       id: cartId,
       status: CartStatusEnum.ACTIVE,
       ...companyWhere(user),
+      ...ownRecordsWhere(user),
     });
 
     return this.cartRepo.remove(cart);

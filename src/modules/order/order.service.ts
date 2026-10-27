@@ -2,10 +2,12 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateOrderDto } from './dto/request/create-order.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatusEnum } from './entities/order.entity';
-import { EntityManager, FindOptionsWhere, Repository } from 'typeorm';
-import { UserRole } from '../user/entities/user.entity';
+import { EntityManager, Repository } from 'typeorm';
 import { Payload } from 'src/util/token.service';
-import { companyWhere } from 'src/common/utils/company-scope';
+import {
+  companyWhere,
+  ownRecordsWhere,
+} from 'src/common/utils/company-scope';
 
 @Injectable()
 export class OrderService {
@@ -30,13 +32,8 @@ export class OrderService {
 
   // Employees see their own orders, owners their company's, super admin everything.
   async getOrders(user: Payload, companyId?: string) {
-    const where: FindOptionsWhere<Order> =
-      user.role === UserRole.EMPLOYEE
-        ? { user: { id: user.sub }, ...companyWhere(user) }
-        : companyWhere(user, companyId);
-
     return this.orderRepo.find({
-      where,
+      where: { ...companyWhere(user, companyId), ...ownRecordsWhere(user) },
       relations: {
         items: { product: { images: true } },
         user: { employee: true },
@@ -50,7 +47,7 @@ export class OrderService {
 
   async getOrder(user: Payload, id: string) {
     const order = await this.orderRepo.findOne({
-      where: { id, ...companyWhere(user) },
+      where: { id, ...companyWhere(user), ...ownRecordsWhere(user) },
       relations: {
         items: { product: { images: true } },
         user: { employee: true },

@@ -5,6 +5,7 @@ import { Payload } from 'src/util/token.service';
 // Company-scoping rules shared by every module:
 //  - SUPERADMIN can see and change every company's data.
 //  - Everyone else is limited to the company in their token.
+//  - Employees are further limited to their own carts and orders.
 
 export const isSuperAdmin = (user: Payload) =>
   user.role === UserRole.SUPERADMIN;
@@ -27,6 +28,12 @@ export function scopeCompanyId(
 export function companyWhere(user: Payload, filterCompanyId?: string) {
   const companyId = scopeCompanyId(user, filterCompanyId);
   return companyId ? { company: { id: companyId } } : {};
+}
+
+// `where` fragment limiting an EMPLOYEE to the records they own (carts, orders) via
+// a `user` relation. Owners and super admins are only limited by company.
+export function ownRecordsWhere(user: Payload) {
+  return user.role === UserRole.EMPLOYEE ? { user: { id: user.sub } } : {};
 }
 
 // Company new data is created for: a SUPERADMIN must say which company, everyone

@@ -17,7 +17,10 @@ import { ProductService } from '../product/product.service';
 import { Cart, CartStatusEnum } from '../cart/entities/cart.entity';
 import { Product } from '../product/entities/product.entity';
 import { Payload } from 'src/util/token.service';
-import { companyWhere } from 'src/common/utils/company-scope';
+import {
+  companyWhere,
+  ownRecordsWhere,
+} from 'src/common/utils/company-scope';
 
 @Injectable()
 export class ItemService {
@@ -85,6 +88,7 @@ export class ItemService {
       id: cartId,
       status: CartStatusEnum.ACTIVE,
       ...companyWhere(user),
+      ...ownRecordsWhere(user),
     });
   }
 
@@ -92,7 +96,11 @@ export class ItemService {
     const item = await this.itemRepo.findOne({
       where: {
         id: itemId,
-        cart: { status: CartStatusEnum.ACTIVE, ...companyWhere(user) },
+        cart: {
+          status: CartStatusEnum.ACTIVE,
+          ...companyWhere(user),
+          ...ownRecordsWhere(user),
+        },
       },
       relations: { product: true, cart: { company: true } },
     });

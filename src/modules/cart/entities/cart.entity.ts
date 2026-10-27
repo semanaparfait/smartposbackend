@@ -3,6 +3,7 @@ import { Item } from 'src/modules/item/entities/item.entity';
 import { Seat } from 'src/modules/seat/entities/seat.entity';
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
 import { Company } from 'src/modules/company/entities/company.entity';
+import { User } from 'src/modules/user/entities/user.entity';
 
 export enum CartStatusEnum {
   ACTIVE = 'ACTIVE',
@@ -31,6 +32,11 @@ export class Cart extends BaseEntity {
     default: 0,
   })
   totalAmount!: number;
+
+  // Employee who opened the cart; employees only see their own carts.
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'user_id', foreignKeyConstraintName: 'FK_carts_user' })
+  user!: User | null;
 
   @ManyToOne(() => Seat, (seat) => seat.carts, { nullable: true })
   @JoinColumn({ name: 'seat_id' })
