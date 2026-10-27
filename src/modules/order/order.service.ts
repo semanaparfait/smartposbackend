@@ -4,10 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatusEnum } from './entities/order.entity';
 import { EntityManager, Repository } from 'typeorm';
 import { Payload } from 'src/util/token.service';
-import {
-  companyWhere,
-  ownRecordsWhere,
-} from 'src/common/utils/company-scope';
+import { companyWhere, ownRecordsWhere } from 'src/common/utils/company-scope';
 
 @Injectable()
 export class OrderService {

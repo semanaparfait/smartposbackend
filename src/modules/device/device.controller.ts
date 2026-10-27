@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Headers,
+  ParseEnumPipe,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -27,6 +28,7 @@ import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { Public } from 'src/common/decorators/public.decorator';
 import { DeviceIdParam } from './dto/request/device-param.dto';
+import { RegistrationStatusEnum } from './entities/device.entity';
 
 @ApiTags('Devices')
 @UseGuards(AuthGuard, RolesGuard)
@@ -101,8 +103,21 @@ export class DeviceController {
 
   @Get()
   @ApiOperation({ summary: 'Get all devices' })
-  findAll(@User() user: Payload) {
-    return this.service.findAll(user.sub, user.role);
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: RegistrationStatusEnum,
+    description: 'e.g. PENDING for registration requests awaiting a decision',
+  })
+  findAll(
+    @User() user: Payload,
+    @Query(
+      'status',
+      new ParseEnumPipe(RegistrationStatusEnum, { optional: true }),
+    )
+    status?: RegistrationStatusEnum,
+  ) {
+    return this.service.findAll(user.sub, user.role, status);
   }
 
   @Get(':deviceId/activities')

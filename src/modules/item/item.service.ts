@@ -17,10 +17,7 @@ import { ProductService } from '../product/product.service';
 import { Cart, CartStatusEnum } from '../cart/entities/cart.entity';
 import { Product } from '../product/entities/product.entity';
 import { Payload } from 'src/util/token.service';
-import {
-  companyWhere,
-  ownRecordsWhere,
-} from 'src/common/utils/company-scope';
+import { companyWhere, ownRecordsWhere } from 'src/common/utils/company-scope';
 
 @Injectable()
 export class ItemService {

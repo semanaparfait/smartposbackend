@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -24,6 +25,19 @@ export class DeviceService {
 
     private readonly companyService: CompanyService,
   ) {}
+
+  // Sessions opened on a device only work while it stays registered. `id` is Device.id.
+  async assertUsable(id: string) {
+    const device = await this.deviceRepo.findOne({
+      where: { id },
+      select: { id: true, registrationStatus: true },
+    });
+
+    if (device?.registrationStatus !== RegistrationStatusEnum.REGISTERED)
+      throw new UnauthorizedException(
+        `Device is ${device ? device.registrationStatus.toLowerCase() : 'removed'}, please login again`,
+      );
+  }
 
   async verifyDevice(deviceId: string) {
     const device = await this.getOne({
@@ -168,14 +182,30 @@ export class DeviceService {
       throw new NotFoundException('Company not found');
     }
 
+    const existing = await this.deviceRepo.findOne({
+      where: { deviceId: dto.deviceId },
+    });
+
+    // A rejected device may ask again (back to PENDING for a new decision); any other
+    // known device is already waiting or has been decided on.
+    if (
+      existing &&
+      existing.registrationStatus !== RegistrationStatusEnum.REJECTED
+    ) {
+      throw new ConflictException(
+        `Device already exists with status ${existing.registrationStatus}`,
+      );
+    }
+
     const secret = this.newSecret();
 
     const device = await this.deviceRepo.save(
-      this.deviceRepo.create({
+      Object.assign(existing ?? this.deviceRepo.create(), {
         deviceId: dto.deviceId,
         deviceName: dto.deviceName,
         deviceOs: dto.deviceOs,
         company,
+        registrationStatus: RegistrationStatusEnum.PENDING,
         secretHash: this.hashSecret(secret),
       }),
     );
@@ -194,8 +224,13 @@ export class DeviceService {
   ) {
     const device = await this.getById(deviceId, userId, role);
 
-    if (!device.company) {
-      throw new BadRequestException('Device has no registration request');
+    if (
+      !device.company ||
+      device.registrationStatus !== RegistrationStatusEnum.PENDING
+    ) {
+      throw new BadRequestException(
+        'Only pending registration requests can be approved or rejected',
+      );
     }
 
     if (action === 'APPROVE') {
@@ -227,15 +262,24 @@ export class DeviceService {
     }
 
     device.registrationStatus = RegistrationStatusEnum.DISABLED;
+    // Whoever was using it is logged out (see assertUsable).
+    device.currentUser = null;
 
     return this.deviceRepo.save(device);
   }
 
-  async findAll(userId: string, role: UserRole) {
+  async findAll(
+    userId: string,
+    role: UserRole,
+    status?: RegistrationStatusEnum,
+  ) {
     const company = await this.getUserCompany(userId, role);
 
     return await this.deviceRepo.find({
-      where: company ? { company: { id: company.id } } : {},
+      where: {
+        ...(company ? { company: { id: company.id } } : {}),
+        ...(status ? { registrationStatus: status } : {}),
+      },
       relations: { company: true, currentUser: true },
       order: { createdAt: 'DESC' },
     });

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request, Response } from 'express';
-import { Observable } from 'rxjs';
+import { from, Observable, switchMap } from 'rxjs';
 import { LoggerService } from 'src/common/logger/logger.service';
 import { Payload } from 'src/util/token.service';
 import { DeviceService } from './device.service';
@@ -38,6 +38,24 @@ export class DeviceActivityInterceptor implements NestInterceptor {
     const path = request.route?.path ?? request.path;
     const action = operation?.summary ?? `${request.method} ${path}`;
 
+    // A device that was disabled, rejected or deleted cuts off its open sessions at
+    // once, instead of when their tokens expire.
+    return from(this.deviceService.assertUsable(user.deviceId)).pipe(
+      switchMap(() => {
+        this.track(context, user, action, path);
+        return next.handle();
+      }),
+    );
+  }
+
+  private track(
+    context: ExecutionContext,
+    user: Payload,
+    action: string,
+    path: string,
+  ) {
+    const request = context.switchToHttp().getRequest<Request>();
+
     // Wait for the response so the real status code (including errors) is recorded.
     const response = context.switchToHttp().getResponse<Response>();
     response.once('finish', () => {
@@ -57,7 +75,5 @@ export class DeviceActivityInterceptor implements NestInterceptor {
           this.logger.error('Failed to record device activity', error.stack),
         );
     });
-
-    return next.handle();
   }
 }
