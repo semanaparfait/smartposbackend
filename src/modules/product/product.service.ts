@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { ProductCategory } from './entities/product-category.entity';
@@ -8,7 +12,6 @@ import { UpdateProductCategoryDto } from './dto/request/update-product-category.
 import { CreateProductDto } from './dto/request/create-product.dto';
 import { UpdateProductDto } from './dto/request/update-product.dto';
 import { FileService } from '../file/file.service';
-import { FileType } from '../file/entities/file.entity';
 import { Payload } from 'src/util/token.service';
 import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
 
@@ -33,11 +36,16 @@ export class ProductService {
   ) {
     const companyId = targetCompanyId(user, dto.companyId);
 
-    const category = await this.categoryRepo.save(
-      this.categoryRepo.create({ name: dto.name, company: { id: companyId } }),
+    const category = await this.fileService.createWithImage(picture, () =>
+      this.categoryRepo.save(
+        this.categoryRepo.create({
+          name: dto.name,
+          company: { id: companyId },
+        }),
+      ),
     );
-    await this.fileService.save(picture, FileType.IMAGE, category);
-    return category;
+
+    return this.getCategory(user, category.id);
   }
 
   async getCategories(user: Payload, companyId?: string) {
@@ -62,17 +70,35 @@ export class ProductService {
     user: Payload,
     id: string,
     dto: UpdateProductCategoryDto,
+    picture?: Express.Multer.File,
   ) {
     const category = await this.getCategory(user, id);
 
-    Object.assign(category, dto);
+    if (dto.name !== undefined) category.name = dto.name;
 
-    return this.categoryRepo.save(category);
+    await this.categoryRepo.save(category);
+
+    if (picture) await this.fileService.replaceImage(picture, category);
+
+    return this.getCategory(user, id);
   }
 
   async deleteCategory(user: Payload, id: string) {
     const category = await this.getCategory(user, id);
+
+    const products = await this.productRepo.count({
+      where: { category: { id } },
+    });
+
+    if (products)
+      throw new ConflictException(
+        `Category still has ${products} product(s); move them to another category first`,
+      );
+
+    const images = await this.fileService.findImages(category);
+
     await this.categoryRepo.remove(category);
+    await this.fileService.deleteFromStorage(images);
   }
 
   // ---------------- PRODUCT ----------------
@@ -87,15 +113,15 @@ export class ProductService {
 
     if (categoryId) await this.getCompanyCategory(categoryId, companyId);
 
-    const product = await this.productRepo.save(
-      this.productRepo.create({
-        ...fields,
-        company: { id: companyId },
-        ...(categoryId ? { category: { id: categoryId } } : {}),
-      }),
+    const product = await this.fileService.createWithImage(picture, () =>
+      this.productRepo.save(
+        this.productRepo.create({
+          ...fields,
+          company: { id: companyId },
+          ...(categoryId ? { category: { id: categoryId } } : {}),
+        }),
+      ),
     );
-
-    await this.fileService.save(picture, FileType.IMAGE, product);
 
     return await this.getProduct({ id: product.id });
   }
@@ -123,9 +149,14 @@ export class ProductService {
     });
   }
 
-  async updateProduct(user: Payload, id: string, dto: UpdateProductDto) {
+  async updateProduct(
+    user: Payload,
+    id: string,
+    dto: UpdateProductDto,
+    picture?: Express.Multer.File,
+  ) {
     const product = await this.getProduct({ id, ...companyWhere(user) });
-    const { categoryId, ...fields } = dto;
+    const { categoryId, picture: _picture, ...fields } = dto;
 
     Object.assign(product, fields);
 
@@ -136,7 +167,13 @@ export class ProductService {
       );
     }
 
-    return this.productRepo.save(product);
+    // Saved without the loaded images so TypeORM doesn't touch the files table.
+    const { images: _images, ...changes } = product;
+    await this.productRepo.save(changes);
+
+    if (picture) await this.fileService.replaceImage(picture, product);
+
+    return this.getProduct({ id: product.id });
   }
 
   async deactivateProduct(user: Payload, id: string) {

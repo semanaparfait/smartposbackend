@@ -17,7 +17,6 @@ import { UserService } from '../user/user.service';
 import { UserRole } from '../user/entities/user.entity';
 import { CompanyService } from '../company/company.service';
 import { FileService } from '../file/file.service';
-import { FileType } from '../file/entities/file.entity';
 import { Payload } from 'src/util/token.service';
 import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
 
@@ -109,21 +108,21 @@ export class EmployeeService {
 
     const role = await this.getCompanyRole(dto.roleId, company.id);
 
-    return await this.employeeRepo.manager.transaction(async () => {
-      const employee = this.employeeRepo.create({
-        name: dto.name,
-        email: dto.email,
-        phone: dto.phone,
-        salary: dto.salary,
-        shift: dto.shift,
-        role: { id: role.id },
-        company: { id: company.id },
-      });
+    const employee = await this.fileService.createWithImage(picture, () =>
+      this.employeeRepo.save(
+        this.employeeRepo.create({
+          name: dto.name,
+          email: dto.email,
+          phone: dto.phone,
+          salary: dto.salary,
+          shift: dto.shift,
+          role: { id: role.id },
+          company: { id: company.id },
+        }),
+      ),
+    );
 
-      await this.employeeRepo.save(employee);
-
-      await this.fileService.save(picture, FileType.IMAGE, employee);
-
+    try {
       return await this.userService.create({
         companyCode: company.code,
         name: employee.name,
@@ -131,13 +130,17 @@ export class EmployeeService {
         phone: employee.phone,
         role: UserRole.EMPLOYEE,
       });
-    });
+    } catch (error) {
+      // Without a login the employee is unusable, so undo it (and its picture).
+      await this.removeWithImages(employee);
+      throw error;
+    }
   }
 
   async getEmployees(user: Payload, companyId?: string) {
     return this.employeeRepo.find({
       where: companyWhere(user, companyId),
-      relations: { role: true, company: true },
+      relations: { role: true, company: true, profile: true },
       order: { createdAt: 'DESC' },
     });
   }
@@ -155,11 +158,16 @@ export class EmployeeService {
   async findOne(where: FindOptionsWhere<Employee>) {
     return await this.employeeRepo.findOne({
       where,
-      relations: { role: true, company: true },
+      relations: { role: true, company: true, profile: true },
     });
   }
 
-  async updateEmployee(user: Payload, id: string, dto: UpdateEmployeeDto) {
+  async updateEmployee(
+    user: Payload,
+    id: string,
+    dto: UpdateEmployeeDto,
+    picture?: Express.Multer.File,
+  ) {
     const employee = await this.getEmployee(user, { id });
 
     if (dto.roleId) {
@@ -177,16 +185,28 @@ export class EmployeeService {
       shift: dto.shift ?? employee.shift,
     });
 
-    return this.employeeRepo.save(employee);
+    await this.employeeRepo.save(employee);
+
+    if (picture) await this.fileService.replaceImage(picture, employee);
+
+    return this.getEmployee(user, { id });
   }
 
   async deleteEmployee(user: Payload, id: string) {
     const employee = await this.getEmployee(user, { id });
 
-    return this.employeeRepo.remove(employee);
+    return this.removeWithImages(employee);
   }
 
   // helpers
+
+  private async removeWithImages(employee: Employee) {
+    const images = await this.fileService.findImages(employee);
+    await this.userService.detachEmployee(employee.id);
+    const removed = await this.employeeRepo.remove(employee);
+    await this.fileService.deleteFromStorage(images);
+    return removed;
+  }
 
   // An employee can only be given a role of their own company.
   private async getCompanyRole(id: string, companyId: string) {

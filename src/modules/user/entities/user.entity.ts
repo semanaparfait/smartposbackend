@@ -27,7 +27,7 @@ export enum UserRole {
 export class User extends BaseEntity {
   @OneToOne(() => Employee, (employee) => employee.user, { nullable: true })
   @JoinColumn({ name: 'employee_id' })
-  employee!: Employee;
+  employee!: Employee | null;
 
   @ManyToOne(() => Company, (company) => company.users, { nullable: true })
   @JoinColumn({ name: 'company_id' })

@@ -112,13 +112,16 @@ export class EmployeeController {
   }
 
   @Patch('employees/:employeeId')
-  @ApiOperation({ summary: 'Update employee' })
+  @ApiOperation({ summary: 'Update employee (send picture to replace it)' })
+  @UseInterceptors(new FileUploadInterceptor('picture', 1, false))
+  @ApiConsumes('multipart/form-data', 'application/json')
   updateEmployee(
     @User() user: Payload,
     @Param() { employeeId }: EmployeeIdParam,
     @Body() dto: UpdateEmployeeDto,
+    @UploadedFile() picture?: Express.Multer.File,
   ) {
-    return this.service.updateEmployee(user, employeeId, dto);
+    return this.service.updateEmployee(user, employeeId, dto, picture);
   }
 
   @Delete('employees/:employeeId/delete')

@@ -77,13 +77,16 @@ export class ProductController {
   }
 
   @Patch('categories/:categoryId')
-  @ApiOperation({ summary: 'Update category' })
+  @ApiOperation({ summary: 'Update category (send picture to replace it)' })
+  @UseInterceptors(new FileUploadInterceptor('picture', 1, false))
+  @ApiConsumes('multipart/form-data', 'application/json')
   updateCategory(
     @User() user: Payload,
     @Param() { categoryId }: ProductCategoryIdParam,
     @Body() dto: UpdateProductCategoryDto,
+    @UploadedFile() picture?: Express.Multer.File,
   ) {
-    return this.service.updateCategory(user, categoryId, dto);
+    return this.service.updateCategory(user, categoryId, dto, picture);
   }
 
   @Delete('categories/:categoryId/delete')
@@ -127,13 +130,16 @@ export class ProductController {
   }
 
   @Patch('products/:productId')
-  @ApiOperation({ summary: 'Update product' })
+  @ApiOperation({ summary: 'Update product (send picture to replace it)' })
+  @UseInterceptors(new FileUploadInterceptor('picture', 1, false))
+  @ApiConsumes('multipart/form-data', 'application/json')
   updateProduct(
     @User() user: Payload,
     @Param() { productId }: ProductIdParam,
     @Body() dto: UpdateProductDto,
+    @UploadedFile() picture?: Express.Multer.File,
   ) {
-    return this.service.updateProduct(user, productId, dto);
+    return this.service.updateProduct(user, productId, dto, picture);
   }
 
   @Patch('products/:productId/deactivate')

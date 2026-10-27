@@ -2,7 +2,15 @@ import { BaseEntity } from 'src/common/entities/base.entity';
 import { Employee } from 'src/modules/employee/entities/employee.entity';
 import { ProductCategory } from 'src/modules/product/entities/product-category.entity';
 import { Product } from 'src/modules/product/entities/product.entity';
-import { Column, Entity, JoinColumn, ManyToOne, OneToOne } from 'typeorm';
+import {
+  AfterInsert,
+  AfterLoad,
+  Column,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToOne,
+} from 'typeorm';
 
 export enum FileType {
   IMAGE = 'image',
@@ -11,13 +19,38 @@ export enum FileType {
   AUTO = 'auto',
 }
 
+// Inserts a Cloudinary transformation into an upload URL (always over https).
+function deliveryUrl(originalUrl: string, transformation: string) {
+  if (!originalUrl) return originalUrl;
+
+  return originalUrl
+    .replace(/^http:\/\//, 'https://')
+    .replace('/upload/', `/upload/${transformation}/`);
+}
+
 @Entity('files')
 export class File extends BaseEntity {
   @Column()
   name!: string;
 
-  @Column()
+  // Link to the stored original. Clients should use `url` / `thumbnailUrl` instead.
+  @Column({ name: 'url' })
+  originalUrl!: string;
+
+  // Optimized delivery links, built on load (not stored): Cloudinary picks the best
+  // format for the browser (WebP/AVIF), compresses, and never scales up.
   url!: string;
+  thumbnailUrl!: string;
+
+  @AfterLoad()
+  @AfterInsert()
+  buildDeliveryUrls() {
+    this.url = deliveryUrl(this.originalUrl, 'f_auto,q_auto,c_limit,w_1200');
+    this.thumbnailUrl = deliveryUrl(
+      this.originalUrl,
+      'f_auto,q_auto,c_limit,w_300',
+    );
+  }
 
   @Column({ type: 'enum', enum: FileType })
   type!: FileType;

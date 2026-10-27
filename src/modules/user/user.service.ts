@@ -113,6 +113,22 @@ export class UserService {
     return user;
   }
 
+  // When an employee is deleted their login is kept (their orders still point to it)
+  // but deactivated and unlinked, so they can no longer sign in.
+  async detachEmployee(employeeId: string) {
+    const user = await this.userRepo.findOne({
+      where: { employee: { id: employeeId } },
+      relations: { company: true },
+    });
+
+    if (!user) return;
+
+    user.active = false;
+    user.employee = null;
+
+    await this.userRepo.save(user);
+  }
+
   // Bookkeeping write that shouldn't appear in the audit history.
   async touchLastLogin(id: string, at: Date) {
     await this.userRepo
