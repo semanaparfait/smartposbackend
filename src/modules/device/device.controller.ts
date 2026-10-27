@@ -6,9 +6,17 @@ import {
   Param,
   Patch,
   Post,
+  Headers,
+  Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiHeader,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { DeviceService } from './device.service';
 import { CreateDeviceDto } from './dto/request/create-device.dto';
 import { HandleDeviceRequestDto } from './dto/request/handle-device-request.dto';
@@ -36,6 +44,22 @@ export class DeviceController {
   }
 
   @Public()
+  @Post(':deviceId/heartbeat')
+  @ApiOperation({
+    summary: 'Device heartbeat (call every ~30s to stay online)',
+  })
+  @ApiHeader({
+    name: 'x-device-secret',
+    description: 'Secret returned by request-registration or rotate-secret',
+  })
+  heartbeat(
+    @Param('deviceId') deviceId: string,
+    @Headers('x-device-secret') secret?: string,
+  ) {
+    return this.service.heartbeat(deviceId, secret);
+  }
+
+  @Public()
   @Post('request-registration')
   @ApiOperation({ summary: 'Request registration' })
   request(@Body() dto: CreateDeviceDto) {
@@ -57,6 +81,12 @@ export class DeviceController {
     );
   }
 
+  @Patch(':deviceId/rotate-secret')
+  @ApiOperation({ summary: 'Issue a new device secret (shown once)' })
+  rotateSecret(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
+    return this.service.rotateSecret(user.sub, user.role, deviceId);
+  }
+
   @Patch(':deviceId/enable')
   @ApiOperation({ summary: 'Enable device' })
   enable(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
@@ -73,6 +103,22 @@ export class DeviceController {
   @ApiOperation({ summary: 'Get all devices' })
   findAll(@User() user: Payload) {
     return this.service.findAll(user.sub, user.role);
+  }
+
+  @Get(':deviceId/activities')
+  @ApiOperation({ summary: 'Get device activity log' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  activities(
+    @User() user: Payload,
+    @Param() { deviceId }: DeviceIdParam,
+    @Query('limit') limit?: string,
+  ) {
+    return this.service.getActivities(
+      user.sub,
+      user.role,
+      deviceId,
+      limit ? Number(limit) || 50 : 50,
+    );
   }
 
   @Get(':deviceId')

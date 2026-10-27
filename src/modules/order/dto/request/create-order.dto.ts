@@ -5,4 +5,5 @@ export class CreateOrderDto {
   tax!: number;
   note?: string;
   user!: User;
+  companyId!: string;
 }

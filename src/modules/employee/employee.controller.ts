@@ -10,6 +10,7 @@ import {
   UseInterceptors,
   UploadedFiles,
   UploadedFile,
+  Query,
 } from '@nestjs/common';
 import { EmployeeService } from './employee.service';
 import { CreateEmployeeDto } from './dto/request/create-employee.dto';
@@ -18,6 +19,7 @@ import {
   ApiBearerAuth,
   ApiConsumes,
   ApiOperation,
+  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { CreateEmployeeRoleDto } from './dto/request/create-employee-role.dto';
@@ -42,19 +44,24 @@ export class EmployeeController {
   @Post('roles')
   @ApiOperation({ summary: 'Create role' })
   createRole(@User() user: Payload, @Body() dto: CreateEmployeeRoleDto) {
-    return this.service.createRole(user.sub, dto);
+    return this.service.createRole(user, dto);
   }
 
   @Get('roles')
   @ApiOperation({ summary: 'Get all roles' })
-  getRoles(@User() user: Payload) {
-    return this.service.getRoles(user.sub);
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    description: 'Super admin only',
+  })
+  getRoles(@User() user: Payload, @Query('companyId') companyId?: string) {
+    return this.service.getRoles(user, companyId);
   }
 
   @Get('roles/:roleId')
   @ApiOperation({ summary: 'Get role by id' })
   getRole(@User() user: Payload, @Param() { roleId }: EmployeeRoleIdParam) {
-    return this.service.getRole(user.sub, roleId);
+    return this.service.getRole(user, roleId);
   }
 
   @Patch('roles/:roleId')
@@ -64,13 +71,13 @@ export class EmployeeController {
     @Param() { roleId }: EmployeeRoleIdParam,
     @Body() dto: UpdateEmployeeRoleDto,
   ) {
-    return this.service.updateRole(user.sub, roleId, dto);
+    return this.service.updateRole(user, roleId, dto);
   }
 
   @Delete('roles/:roleId/delete')
   @ApiOperation({ summary: 'Delete role' })
   deleteRole(@User() user: Payload, @Param() { roleId }: EmployeeRoleIdParam) {
-    return this.service.deleteRole(user.sub, roleId);
+    return this.service.deleteRole(user, roleId);
   }
 
   // ---------- Employee ---------------------
@@ -84,19 +91,24 @@ export class EmployeeController {
     @Body() dto: CreateEmployeeDto,
     @UploadedFile() picture: Express.Multer.File,
   ) {
-    return this.service.createEmployee(user.sub, dto, picture);
+    return this.service.createEmployee(user, dto, picture);
   }
 
   @Get('employees')
   @ApiOperation({ summary: 'Get all employees' })
-  getEmployees(@User() user: Payload) {
-    return this.service.getEmployees(user.sub);
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    description: 'Super admin only',
+  })
+  getEmployees(@User() user: Payload, @Query('companyId') companyId?: string) {
+    return this.service.getEmployees(user, companyId);
   }
 
   @Get('employees/:employeeId')
   @ApiOperation({ summary: 'Get employee by id' })
   getEmployee(@User() user: Payload, @Param() { employeeId }: EmployeeIdParam) {
-    return this.service.getEmployee(user.sub, { id: employeeId });
+    return this.service.getEmployee(user, { id: employeeId });
   }
 
   @Patch('employees/:employeeId')
@@ -106,7 +118,7 @@ export class EmployeeController {
     @Param() { employeeId }: EmployeeIdParam,
     @Body() dto: UpdateEmployeeDto,
   ) {
-    return this.service.updateEmployee(user.sub, employeeId, dto);
+    return this.service.updateEmployee(user, employeeId, dto);
   }
 
   @Delete('employees/:employeeId/delete')
@@ -115,6 +127,6 @@ export class EmployeeController {
     @User() user: Payload,
     @Param() { employeeId }: EmployeeIdParam,
   ) {
-    return this.service.deleteEmployee(user.sub, employeeId);
+    return this.service.deleteEmployee(user, employeeId);
   }
 }

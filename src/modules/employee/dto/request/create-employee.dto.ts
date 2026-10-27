@@ -43,7 +43,11 @@ export class CreateEmployeeDto {
   @IsUUID()
   roleId!: string;
 
-  // @ApiProperty()
-  // @IsUUID()
-  // companyId!: string;
+  @ApiProperty({
+    required: false,
+    description: 'Required for super admin; ignored for others',
+  })
+  @IsOptional()
+  @IsUUID()
+  companyId?: string;
 }

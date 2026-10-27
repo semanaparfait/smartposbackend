@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/request/login.dto';
 import { PinLoginDto } from './dto/request/pin-login.dto';
+import { ChangePasswordDto } from './dto/request/change-password.dto';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { AuthGuard } from 'src/common/guards';
@@ -26,6 +27,20 @@ export class AuthController {
   @ApiOperation({ summary: 'Login with PIN' })
   pinLogin(@Body() dto: PinLoginDto) {
     return this.authService.pinLogin(dto);
+  }
+
+  @Post('logout')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Logout' })
+  logout(@User() user: Payload) {
+    return this.authService.logout(user);
+  }
+
+  @Patch('change-password')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Change own password' })
+  changePassword(@User() user: Payload, @Body() dto: ChangePasswordDto) {
+    return this.authService.changePassword(user.sub, dto);
   }
 
   @Get('me')

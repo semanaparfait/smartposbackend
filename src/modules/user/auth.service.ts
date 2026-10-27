@@ -1,15 +1,19 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { User, UserRole } from './entities/user.entity';
-import { Not, Repository } from 'typeorm';
 import {
   Device,
   RegistrationStatusEnum,
 } from '../device/entities/device.entity';
 import { LoginDto } from './dto/request/login.dto';
 import { PinLoginDto } from './dto/request/pin-login.dto';
+import { ChangePasswordDto } from './dto/request/change-password.dto';
 import { compareHashContent } from 'src/util';
-import { TokenService } from 'src/util/token.service';
+import { Payload, TokenService } from 'src/util/token.service';
+import { LoginThrottleService } from 'src/util/login-throttle.service';
 import { UserService } from './user.service';
 import { DeviceService } from '../device/device.service';
 
@@ -21,18 +25,31 @@ export class AuthService {
     private readonly deviceService: DeviceService,
 
     private readonly tokenService: TokenService,
+
+    private readonly throttle: LoginThrottleService,
   ) {}
 
   async login(dto: LoginDto) {
-    const user = await this.userService.findOne({
+    const throttleKey = `email:${dto.email.toLowerCase()}`;
+    this.throttle.assertAllowed(throttleKey);
+
+    const user = await this.userService.findWithSecrets({
       active: true,
       email: dto.email,
     });
 
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+    // Check the password before anything else so failures don't reveal which emails exist.
+    if (!user || !(await compareHashContent(dto.password, user.password))) {
+      this.throttle.recordFailure(throttleKey);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    this.throttle.reset(throttleKey);
 
     if (user.role === UserRole.EMPLOYEE)
       throw new UnauthorizedException('Employees must login using PIN');
+
+    let device: Device | undefined;
 
     if (user.role !== UserRole.SUPERADMIN) {
       if (!user.company) {
@@ -43,48 +60,30 @@ export class AuthService {
         throw new UnauthorizedException('Device ID is required');
       }
 
-      await this.deviceService.getOne({
+      device = await this.deviceService.getOne({
         deviceId: dto.deviceId,
         registrationStatus: RegistrationStatusEnum.REGISTERED,
         company: { id: user.company.id },
       });
     }
 
-    const validPassword = await compareHashContent(dto.password, user.password);
-
-    if (!validPassword) throw new UnauthorizedException('Invalid credentials');
-
-    if (!user.active)
-      throw new UnauthorizedException('User account is disabled');
-
-    user.lastLoginAt = new Date();
-    await this.userService.update(user);
-
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-      companyId: user.company?.id,
-    };
-
-    return {
-      accessToken: await this.tokenService.generateJWTTokens(payload),
-    };
+    return this.openSession(user, device);
   }
 
   async pinLogin(dto: PinLoginDto) {
+    // A 6-digit PIN is easy to guess, so failed attempts are limited per device.
+    const throttleKey = `pin:${dto.deviceId}`;
+    this.throttle.assertAllowed(throttleKey);
+
     const device = await this.deviceService.getOne({
       deviceId: dto.deviceId,
       registrationStatus: RegistrationStatusEnum.REGISTERED,
     });
 
-    if (
-      device.registrationStatus !== RegistrationStatusEnum.REGISTERED ||
-      !device.company
-    )
+    if (!device.company)
       throw new UnauthorizedException('Device is not registered');
 
-    const users = await this.userService.findAll({
+    const users = await this.userService.findAllWithSecrets({
       role: UserRole.EMPLOYEE,
       active: true,
       company: { id: device.company.id },
@@ -93,41 +92,67 @@ export class AuthService {
     let authenticatedUser: User | null = null;
 
     for (const user of users) {
-      // if (user.role === UserRole.ADMIN || !user.company) {
-      //   continue;
-      // }
-
-      // if (user.company.id !== device.company.id) {
-      //   continue;
-      // }
-
-      const validPin = await compareHashContent(dto.pin, user.pin);
-
-      if (validPin) {
+      if (user.pin && (await compareHashContent(dto.pin, user.pin))) {
         authenticatedUser = user;
         break;
       }
     }
 
-    if (!authenticatedUser) throw new UnauthorizedException('Invalid PIN');
+    if (!authenticatedUser) {
+      this.throttle.recordFailure(throttleKey);
+      throw new UnauthorizedException('Invalid PIN');
+    }
 
-    authenticatedUser.lastLoginAt = new Date();
+    this.throttle.reset(throttleKey);
 
-    await this.userService.update(authenticatedUser);
+    return this.openSession(authenticatedUser, device);
+  }
 
-    const payload = {
-      sub: authenticatedUser.id,
-      email: authenticatedUser.email,
-      role: authenticatedUser.role,
-      companyId: authenticatedUser.company?.id,
-    };
+  async logout(user: Payload) {
+    if (user.deviceId)
+      await this.deviceService.recordLogout(user.deviceId, user.sub);
 
-    return {
-      accessToken: await this.tokenService.generateJWTTokens(payload),
-    };
+    return { message: 'Logged out' };
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.userService.findWithSecrets({ id: userId });
+
+    if (
+      !user ||
+      !(await compareHashContent(dto.currentPassword, user.password))
+    )
+      throw new UnauthorizedException('Current password is incorrect');
+
+    if (dto.currentPassword === dto.newPassword)
+      throw new BadRequestException('New password must be different');
+
+    await this.userService.changePassword(userId, dto.newPassword);
+
+    return { message: 'Password changed' };
   }
 
   async me(userId: string) {
     return await this.userService.getOne({ id: userId });
+  }
+
+  private async openSession(user: User, device?: Device) {
+    await this.userService.touchLastLogin(user.id, new Date());
+
+    if (device) await this.deviceService.recordLogin(device, user);
+
+    const payload: Payload = {
+      sub: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      companyId: user.company?.id,
+      deviceId: device?.id,
+    };
+
+    return {
+      accessToken: await this.tokenService.generateJWTTokens(payload),
+      mustChangePassword: user.mustChangePassword,
+    };
   }
 }

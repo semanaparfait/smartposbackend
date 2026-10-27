@@ -5,6 +5,11 @@ import { EmployeeRole } from 'src/modules/employee/entities/employee-role.entity
 import { User } from 'src/modules/user/entities/user.entity';
 import { BeforeInsert, Column, Entity, OneToMany } from 'typeorm';
 import { FloorMap } from 'src/modules/floor-map/entities/floor-map.entity';
+import { ProductCategory } from 'src/modules/product/entities/product-category.entity';
+import { Product } from 'src/modules/product/entities/product.entity';
+import { RoomType } from 'src/modules/room/entities/room-type.entity';
+import { Cart } from 'src/modules/cart/entities/cart.entity';
+import { Order } from 'src/modules/order/entities/order.entity';
 
 export enum CompanyType {
   RESTAURANT = 'RESTAURANT',
@@ -52,6 +57,21 @@ export class Company extends BaseEntity {
 
   @OneToMany(() => FloorMap, (floorMaps) => floorMaps.company)
   floorMaps!: FloorMap[];
+
+  @OneToMany(() => ProductCategory, (category) => category.company)
+  categories!: ProductCategory[];
+
+  @OneToMany(() => Product, (product) => product.company)
+  products!: Product[];
+
+  @OneToMany(() => RoomType, (roomType) => roomType.company)
+  roomTypes!: RoomType[];
+
+  @OneToMany(() => Cart, (cart) => cart.company)
+  carts!: Cart[];
+
+  @OneToMany(() => Order, (order) => order.company)
+  orders!: Order[];
 
   @BeforeInsert()
   generateCode() {

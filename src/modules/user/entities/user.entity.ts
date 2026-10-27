@@ -42,10 +42,11 @@ export class User extends BaseEntity {
   @Column({ nullable: true })
   phone!: string;
 
-  @Column({ nullable: true })
+  // Hashes are never selected by default; use UserService.findWithSecrets when they are needed.
+  @Column({ nullable: true, select: false })
   pin!: string;
 
-  @Column()
+  @Column({ select: false })
   password!: string;
 
   @Column({ type: 'enum', enum: UserRole })

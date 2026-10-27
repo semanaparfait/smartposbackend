@@ -9,7 +9,9 @@ describe('RoomController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [RoomController],
       providers: [RoomService],
-    }).compile();
+    })
+      .useMocker(() => ({}))
+      .compile();
 
     controller = module.get<RoomController>(RoomController);
   });

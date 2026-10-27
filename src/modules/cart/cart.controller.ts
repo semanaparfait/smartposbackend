@@ -4,12 +4,18 @@ import {
   Body,
   Patch,
   Param,
+  Query,
   UseGuards,
   Delete,
   Get,
 } from '@nestjs/common';
 import { CartService } from './cart.service';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { UserRole } from '../user/entities/user.entity';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -28,26 +34,34 @@ export class CartController {
 
   @Post('create')
   @ApiOperation({ summary: 'Create cart' })
-  async createCart(@Body() dto: CreateCartDto) {
-    return await this.service.createCart(dto);
+  async createCart(@User() user: Payload, @Body() dto: CreateCartDto) {
+    return await this.service.createCart(user, dto);
   }
 
   @Get()
   @ApiOperation({ summary: 'Get carts' })
-  async findCarts() {
-    return await this.service.findCarts();
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    description: 'Super admin only',
+  })
+  async findCarts(
+    @User() user: Payload,
+    @Query('companyId') companyId?: string,
+  ) {
+    return await this.service.findCarts(user, companyId);
   }
 
   @Patch(':cartId/checkout')
   @ApiOperation({ summary: 'Checkout cart' })
   async checkout(@User() user: Payload, @Param() { cartId }: CartIdParam) {
-    return await this.service.checkout(user.sub, cartId);
+    return await this.service.checkout(user, cartId);
   }
 
   @Delete(':cartId/abandon')
   @ApiOperation({ summary: 'Abandon cart' })
-  async abandon(@Param() { cartId }: CartIdParam) {
-    await this.service.abandon(cartId);
+  async abandon(@User() user: Payload, @Param() { cartId }: CartIdParam) {
+    await this.service.abandon(user, cartId);
 
     return { message: 'Cart removed' };
   }

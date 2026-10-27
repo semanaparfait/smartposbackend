@@ -1,17 +1,19 @@
 import {
   Controller,
   Get,
-  Post,
   Body,
   Patch,
   Param,
-  Delete,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { OrderService } from './order.service';
-import { CreateOrderDto } from './dto/request/create-order.dto';
-import { UpdateOrderDto } from './dto/request/update-order.dto';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { UpdateOrderStatusDto } from './dto/request/update-order-status.dto';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -31,35 +33,41 @@ export class OrderController {
   @Get()
   @Roles(UserRole.EMPLOYEE, UserRole.OWNER)
   @ApiOperation({ summary: 'Get all orders' })
-  getOrders(@User() user: Payload) {
-    return this.service.getOrders(user.sub);
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    description: 'Super admin only',
+  })
+  getOrders(@User() user: Payload, @Query('companyId') companyId?: string) {
+    return this.service.getOrders(user, companyId);
   }
 
   @Get(':orderId')
   @Roles(UserRole.EMPLOYEE, UserRole.OWNER)
   @ApiOperation({ summary: 'Get order by id' })
-  getOrder(@Param() { orderId }: OrderIdParam) {
-    return this.service.getOrder(orderId);
+  getOrder(@User() user: Payload, @Param() { orderId }: OrderIdParam) {
+    return this.service.getOrder(user, orderId);
   }
 
   @Patch(':orderId/status')
   @ApiOperation({ summary: 'Change order status' })
   changeStatus(
+    @User() user: Payload,
     @Param() { orderId }: OrderIdParam,
     @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.service.changeStatus(orderId, dto.status);
+    return this.service.changeStatus(user, orderId, dto.status);
   }
 
   @Patch(':orderId/complete')
   @ApiOperation({ summary: 'Complete order' })
-  completeOrder(@Param() { orderId }: OrderIdParam) {
-    return this.service.completeOrder(orderId);
+  completeOrder(@User() user: Payload, @Param() { orderId }: OrderIdParam) {
+    return this.service.completeOrder(user, orderId);
   }
 
   @Patch(':orderId/cancel')
   @ApiOperation({ summary: 'Cancel order' })
-  cancelOrder(@Param() { orderId }: OrderIdParam) {
-    return this.service.cancelOrder(orderId);
+  cancelOrder(@User() user: Payload, @Param() { orderId }: OrderIdParam) {
+    return this.service.cancelOrder(user, orderId);
   }
 }

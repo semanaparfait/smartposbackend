@@ -16,7 +16,9 @@ import { FloorMapModule } from './modules/floor-map/floor-map.module';
 import serverConfig from './config/server.config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import databaseConfig from './config/database.config';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { RequestContextInterceptor } from './common/context/request-context.interceptor';
+import { AuditModule } from './modules/audit/audit.module';
 import { AllExceptionFilter } from './common/filter/all.exceptions.filter';
 import { LoggerService } from './common/logger/logger.service';
 import { SeederModule } from './database/seeder/seeder.module';
@@ -44,11 +46,13 @@ import cloudinaryConfig from './config/cloudinary.config';
     ItemModule,
     OrderModule,
     FileModule,
+    AuditModule,
   ],
   // controllers: [AppController],
   providers: [
     LoggerService,
     { provide: APP_FILTER, useClass: AllExceptionFilter },
+    { provide: APP_INTERCEPTOR, useClass: RequestContextInterceptor },
     AppService,
   ],
 })

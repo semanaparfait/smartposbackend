@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   forwardRef,
   Inject,
   Injectable,
@@ -13,7 +14,10 @@ import {
   AddCartItemByIdDto,
 } from './dto/request/add-cart-item.dto';
 import { ProductService } from '../product/product.service';
-import { CartStatusEnum } from '../cart/entities/cart.entity';
+import { Cart, CartStatusEnum } from '../cart/entities/cart.entity';
+import { Product } from '../product/entities/product.entity';
+import { Payload } from 'src/util/token.service';
+import { companyWhere } from 'src/common/utils/company-scope';
 
 @Injectable()
 export class ItemService {
@@ -27,86 +31,42 @@ export class ItemService {
     private readonly productService: ProductService,
   ) {}
 
-  async addItemById(cartId: string, dto: AddCartItemByIdDto) {
-    let cart = await this.cartService.getCart({
-      id: cartId,
-      status: CartStatusEnum.ACTIVE,
-    });
+  async addItemById(user: Payload, cartId: string, dto: AddCartItemByIdDto) {
+    const cart = await this.getActiveCart(user, cartId);
 
     const product = await this.productService.getProduct({
       id: dto.productId,
+      company: { id: cart.company.id },
     });
 
-    let item = cart.items.find((i) => i.product.id === product.id);
-
-    if (!item) {
-      item = this.itemRepo.create({
-        cart: { id: cart.id },
-        product: { id: product.id },
-        quantity: dto.quantity,
-        totalPrice: Number(product.sellingPrice) * dto.quantity,
-      });
-
-      await this.itemRepo.save(item);
-    } else {
-      await this.updateItemQuantity(item.id, dto.quantity);
-    }
-
-    await this.cartService.calculateCartTotal(cart.id);
+    await this.addToCart(cart, product, dto.quantity);
   }
 
-  async addItemByCode(cartId: string, dto: AddCartItemByCodeDto) {
-    let cart = await this.cartService.getCart({
-      id: cartId,
-      status: CartStatusEnum.ACTIVE,
-    });
+  async addItemByCode(
+    user: Payload,
+    cartId: string,
+    dto: AddCartItemByCodeDto,
+  ) {
+    const cart = await this.getActiveCart(user, cartId);
 
     const product = await this.productService.getProduct({
       barCode: dto.barCode,
+      company: { id: cart.company.id },
     });
 
-    let item = cart.items.find((i) => i.product.id === product.id);
-
-    if (!item) {
-      item = this.itemRepo.create({
-        cart: { id: cart.id },
-        product: { id: product.id },
-        quantity: 1,
-        totalPrice: Number(product.sellingPrice) * 1,
-      });
-
-      await this.itemRepo.save(item);
-    } else {
-      await this.updateItemQuantity(item.id, 1);
-    }
-
-    await this.cartService.calculateCartTotal(cart.id);
+    await this.addToCart(cart, product, 1);
   }
 
-  async updateItemQuantity(itemId: string, quantity: number) {
-    let item = await this.itemRepo.findOne({
-      where: { id: itemId, cart: { status: CartStatusEnum.ACTIVE } },
-      relations: { product: true, cart: true },
-    });
+  async updateItemQuantity(user: Payload, itemId: string, quantity: number) {
+    const item = await this.getActiveItem(user, itemId);
 
-    if (!item) throw new NotFoundException('Item not found');
-
-    item.quantity = quantity;
-
-    item.totalPrice = Number(item.product.sellingPrice) * quantity;
-
-    await this.itemRepo.save(item);
+    await this.setQuantity(item, quantity);
 
     await this.cartService.calculateCartTotal(item.cart.id);
   }
 
-  async removeItem(id: string) {
-    const item = await this.itemRepo.findOne({
-      where: { id, cart: { status: CartStatusEnum.ACTIVE } },
-      relations: { product: true, cart: true },
-    });
-
-    if (!item) throw new NotFoundException('Item not found');
+  async removeItem(user: Payload, id: string) {
+    const item = await this.getActiveItem(user, id);
 
     await this.itemRepo.remove(item);
 
@@ -116,5 +76,63 @@ export class ItemService {
   async updateItem(item: Item, manager?: EntityManager) {
     const repo = manager ? manager.getRepository(Item) : this.itemRepo;
     await repo.save(item);
+  }
+
+  // helpers
+
+  private getActiveCart(user: Payload, cartId: string) {
+    return this.cartService.getCart({
+      id: cartId,
+      status: CartStatusEnum.ACTIVE,
+      ...companyWhere(user),
+    });
+  }
+
+  private async getActiveItem(user: Payload, itemId: string) {
+    const item = await this.itemRepo.findOne({
+      where: {
+        id: itemId,
+        cart: { status: CartStatusEnum.ACTIVE, ...companyWhere(user) },
+      },
+      relations: { product: true, cart: { company: true } },
+    });
+
+    if (!item) throw new NotFoundException('Item not found');
+
+    return item;
+  }
+
+  // Adding a product already in the cart increases its quantity.
+  private async addToCart(cart: Cart, product: Product, quantity: number) {
+    if (!product.active) throw new BadRequestException('Product is not active');
+
+    const existing = cart.items.find((i) => i.product.id === product.id);
+
+    // Only cart.id is persisted; the company is carried along for the audit log.
+    const cartRef = { id: cart.id, company: cart.company } as Cart;
+
+    if (existing) {
+      existing.product = product;
+      existing.cart = cartRef;
+      await this.setQuantity(existing, existing.quantity + quantity);
+    } else {
+      await this.itemRepo.save(
+        this.itemRepo.create({
+          cart: cartRef,
+          product: { id: product.id },
+          quantity,
+          totalPrice: Number(product.sellingPrice) * quantity,
+        }),
+      );
+    }
+
+    await this.cartService.calculateCartTotal(cart.id);
+  }
+
+  private async setQuantity(item: Item, quantity: number) {
+    item.quantity = quantity;
+    item.totalPrice = Number(item.product.sellingPrice) * quantity;
+
+    await this.itemRepo.save(item);
   }
 }

@@ -25,6 +25,9 @@ export class RolesGuard implements CanActivate {
 
     const { user } = context.switchToHttp().getRequest();
 
-    return requiredRoles.includes(user.role);
+    // SUPERADMIN has access to every endpoint.
+    if (user?.role === UserRole.SUPERADMIN) return true;
+
+    return requiredRoles.includes(user?.role);
   }
 }

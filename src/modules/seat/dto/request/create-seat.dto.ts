@@ -1,5 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNumber, IsString, IsUUID } from 'class-validator';
+import {
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 import { SeatStatusEnum } from '../../entities/seat.entity';
 
 export class CreateSeatDto {
@@ -11,9 +17,10 @@ export class CreateSeatDto {
   @IsString()
   name!: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsString()
-  img!: string;
+  img?: string;
 
   @ApiProperty()
   @IsNumber()

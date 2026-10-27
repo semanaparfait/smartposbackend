@@ -27,8 +27,8 @@ export class UserController {
 
   @Post()
   @ApiOperation({ summary: 'Create User' })
-  async createUser(@User() user: Payload, @Body() dto: CreateUserDto) {
-    return this.service.create(user.sub, dto);
+  async createUser(@Body() dto: CreateUserDto) {
+    return this.service.create(dto);
   }
 
   @Get()

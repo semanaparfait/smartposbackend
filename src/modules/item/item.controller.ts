@@ -8,7 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ItemService } from './item.service';
-import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   AddCartItemByCodeDto,
   AddCartItemByIdDto,
@@ -17,9 +17,12 @@ import { UpdateCartItemDto } from './dto/request/update-cart-item.dto';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from '../user/entities/user.entity';
+import { User } from 'src/common/decorators/user.decorator';
+import { Payload } from 'src/util/token.service';
 import { CartIdParam } from '../cart/dto/request/cart-param.dto';
 import { ItemIdParam } from './dto/request/item-param.dto';
 
+@ApiTags('Cart Items')
 @Controller('items')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles(UserRole.EMPLOYEE)
@@ -30,40 +33,43 @@ export class ItemController {
   @Post(':cartId/item/productId')
   @ApiOperation({ summary: 'Add item to cart by Id' })
   async addItemById(
+    @User() user: Payload,
     @Param() { cartId }: CartIdParam,
     @Body() dto: AddCartItemByIdDto,
   ) {
-    await this.service.addItemById(cartId, dto);
+    await this.service.addItemById(user, cartId, dto);
 
-    return { message: 'Item added from cart' };
+    return { message: 'Item added to cart' };
   }
 
   @Post(':cartId/item/productCode')
   @ApiOperation({ summary: 'Add item to cart by BarCode' })
   async addItemByCode(
+    @User() user: Payload,
     @Param() { cartId }: CartIdParam,
     @Body() dto: AddCartItemByCodeDto,
   ) {
-    await this.service.addItemByCode(cartId, dto);
+    await this.service.addItemByCode(user, cartId, dto);
 
-    return { message: 'Item added from cart' };
+    return { message: 'Item added to cart' };
   }
 
   @Patch(':itemId')
   @ApiOperation({ summary: 'Update item quantity' })
   async updateItem(
+    @User() user: Payload,
     @Param() { itemId }: ItemIdParam,
     @Body() dto: UpdateCartItemDto,
   ) {
-    await this.service.updateItemQuantity(itemId, dto.quantity);
+    await this.service.updateItemQuantity(user, itemId, dto.quantity);
 
-    return { message: 'Item updated from cart' };
+    return { message: 'Item updated' };
   }
 
   @Delete(':itemId/delete')
   @ApiOperation({ summary: 'Remove item from cart' })
-  async removeItem(@Param() { itemId }: ItemIdParam) {
-    await this.service.removeItem(itemId);
+  async removeItem(@User() user: Payload, @Param() { itemId }: ItemIdParam) {
+    await this.service.removeItem(user, itemId);
 
     return { message: 'Item removed from cart' };
   }

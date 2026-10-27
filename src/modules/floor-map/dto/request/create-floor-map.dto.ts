@@ -1,10 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsUUID } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateFloorMapDto {
-  @ApiProperty()
+  @ApiProperty({
+    required: false,
+    description: 'Required for super admin; ignored for others',
+  })
+  @IsOptional()
   @IsUUID()
-  companyId!: string;
+  companyId?: string;
 
   @ApiProperty()
   @IsString()

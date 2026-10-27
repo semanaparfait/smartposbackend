@@ -8,6 +8,12 @@ import { UpdateRoomTypeDto } from './dto/request/update-room-type.dto';
 import { CreateRoomTypeDto } from './dto/request/create-room-type.dto';
 import { UpdateRoomDto } from './dto/request/update-room.dto';
 import { CreateRoomDto } from './dto/request/create-room.dto';
+import { Payload } from 'src/util/token.service';
+import {
+  companyWhere,
+  scopeCompanyId,
+  targetCompanyId,
+} from 'src/common/utils/company-scope';
 
 @Injectable()
 export class RoomService {
@@ -22,22 +28,26 @@ export class RoomService {
     private readonly floorMapRepo: Repository<FloorMap>,
   ) {}
 
-  async createRoomType(dto: CreateRoomTypeDto) {
-    const roomType = this.roomTypeRepo.create(dto);
+  async createRoomType(user: Payload, dto: CreateRoomTypeDto) {
+    const roomType = this.roomTypeRepo.create({
+      name: dto.name,
+      company: { id: targetCompanyId(user, dto.companyId) },
+    });
 
     return this.roomTypeRepo.save(roomType);
   }
 
-  async getRoomTypes() {
+  async getRoomTypes(user: Payload, companyId?: string) {
     return this.roomTypeRepo.find({
+      where: companyWhere(user, companyId),
       order: { createdAt: 'DESC' },
     });
   }
 
-  async getRoomType(id: string) {
+  async getRoomType(user: Payload, id: string) {
     const roomType = await this.roomTypeRepo.findOne({
-      where: { id },
-      relations: { rooms: true },
+      where: { id, ...companyWhere(user) },
+      relations: { rooms: true, company: true },
     });
 
     if (!roomType) {
@@ -47,36 +57,27 @@ export class RoomService {
     return roomType;
   }
 
-  async updateRoomType(id: string, dto: UpdateRoomTypeDto) {
-    const roomType = await this.getRoomType(id);
+  async updateRoomType(user: Payload, id: string, dto: UpdateRoomTypeDto) {
+    const roomType = await this.getRoomType(user, id);
 
     Object.assign(roomType, dto);
 
     return this.roomTypeRepo.save(roomType);
   }
 
-  async deleteRoomType(id: string) {
-    const roomType = await this.getRoomType(id);
+  async deleteRoomType(user: Payload, id: string) {
+    const roomType = await this.getRoomType(user, id);
 
     return this.roomTypeRepo.remove(roomType);
   }
 
-  async createRoom(dto: CreateRoomDto) {
-    const floorMap = await this.floorMapRepo.findOne({
-      where: { id: dto.floorMapId },
-    });
+  async createRoom(user: Payload, dto: CreateRoomDto) {
+    const floorMap = await this.getFloorMap(user, dto.floorMapId);
 
-    if (!floorMap) {
-      throw new NotFoundException('Floor map not found');
-    }
-
-    const roomType = await this.roomTypeRepo.findOne({
-      where: { id: dto.roomTypeId },
-    });
-
-    if (!roomType) {
-      throw new NotFoundException('Room type not found');
-    }
+    const roomType = await this.getCompanyRoomType(
+      dto.roomTypeId,
+      floorMap.company.id,
+    );
 
     const room = this.roomRepo.create({
       name: dto.name,
@@ -88,8 +89,11 @@ export class RoomService {
     return this.roomRepo.save(room);
   }
 
-  async getRooms() {
+  async getRooms(user: Payload, companyId?: string) {
+    const scope = scopeCompanyId(user, companyId);
+
     return this.roomRepo.find({
+      where: scope ? { floorMap: { company: { id: scope } } } : {},
       relations: { floorMap: true, roomType: true },
       order: {
         createdAt: 'DESC',
@@ -97,11 +101,16 @@ export class RoomService {
     });
   }
 
-  async getRoom(id: string) {
+  async getRoom(user: Payload, id: string) {
+    const scope = scopeCompanyId(user);
+
     const room = await this.roomRepo.findOne({
-      where: { id },
-      relations: { floorMap: true, roomType: true, seats: true },
-      // relations: ['floorMap', 'roomType', 'seats'],
+      where: { id, ...(scope ? { floorMap: { company: { id: scope } } } : {}) },
+      relations: {
+        floorMap: { company: true },
+        roomType: true,
+        seats: true,
+      },
     });
 
     if (!room) {
@@ -111,31 +120,18 @@ export class RoomService {
     return room;
   }
 
-  async updateRoom(id: string, dto: UpdateRoomDto) {
-    const room = await this.getRoom(id);
+  async updateRoom(user: Payload, id: string, dto: UpdateRoomDto) {
+    const room = await this.getRoom(user, id);
 
     if (dto.floorMapId) {
-      const floorMap = await this.floorMapRepo.findOne({
-        where: { id: dto.floorMapId },
-      });
-
-      if (!floorMap) {
-        throw new NotFoundException('Floor map not found');
-      }
-
-      room.floorMap = floorMap;
+      room.floorMap = await this.getFloorMap(user, dto.floorMapId);
     }
 
     if (dto.roomTypeId) {
-      const roomType = await this.roomTypeRepo.findOne({
-        where: { id: dto.roomTypeId },
-      });
-
-      if (!roomType) {
-        throw new NotFoundException('Room type not found');
-      }
-
-      room.roomType = roomType;
+      room.roomType = await this.getCompanyRoomType(
+        dto.roomTypeId,
+        room.floorMap.company.id,
+      );
     }
 
     Object.assign(room, {
@@ -146,17 +142,45 @@ export class RoomService {
     return this.roomRepo.save(room);
   }
 
-  async changeStatus(id: string, status: RoomStatusEnum) {
-    const room = await this.getRoom(id);
+  async changeStatus(user: Payload, id: string, status: RoomStatusEnum) {
+    const room = await this.getRoom(user, id);
 
     room.status = status;
 
     return this.roomRepo.save(room);
   }
 
-  async deleteRoom(id: string) {
-    const room = await this.getRoom(id);
+  async deleteRoom(user: Payload, id: string) {
+    const room = await this.getRoom(user, id);
 
     return this.roomRepo.remove(room);
+  }
+
+  // helpers
+
+  private async getFloorMap(user: Payload, id: string) {
+    const floorMap = await this.floorMapRepo.findOne({
+      where: { id, ...companyWhere(user) },
+      relations: { company: true },
+    });
+
+    if (!floorMap) {
+      throw new NotFoundException('Floor map not found');
+    }
+
+    return floorMap;
+  }
+
+  // A room may only use a room type of the same company as its floor map.
+  private async getCompanyRoomType(id: string, companyId: string) {
+    const roomType = await this.roomTypeRepo.findOne({
+      where: { id, company: { id: companyId } },
+    });
+
+    if (!roomType) {
+      throw new NotFoundException('Room type not found');
+    }
+
+    return roomType;
   }
 }

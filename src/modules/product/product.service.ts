@@ -9,6 +9,8 @@ import { CreateProductDto } from './dto/request/create-product.dto';
 import { UpdateProductDto } from './dto/request/update-product.dto';
 import { FileService } from '../file/file.service';
 import { FileType } from '../file/entities/file.entity';
+import { Payload } from 'src/util/token.service';
+import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
 
 @Injectable()
 export class ProductService {
@@ -25,24 +27,30 @@ export class ProductService {
   // ---------------- CATEGORY ----------------
 
   async createCategory(
+    user: Payload,
     dto: CreateProductCategoryDto,
     picture: Express.Multer.File,
   ) {
-    const category = await this.categoryRepo.save(dto);
+    const companyId = targetCompanyId(user, dto.companyId);
+
+    const category = await this.categoryRepo.save(
+      this.categoryRepo.create({ name: dto.name, company: { id: companyId } }),
+    );
     await this.fileService.save(picture, FileType.IMAGE, category);
     return category;
   }
 
-  async getCategories() {
+  async getCategories(user: Payload, companyId?: string) {
     return this.categoryRepo.find({
+      where: companyWhere(user, companyId),
       relations: { image: true },
     });
   }
 
-  async getCategory(id: string) {
+  async getCategory(user: Payload, id: string) {
     const category = await this.categoryRepo.findOne({
-      where: { id },
-      relations: { image: true },
+      where: { id, ...companyWhere(user) },
+      relations: { image: true, company: true },
     });
 
     if (!category) throw new NotFoundException('Category not found');
@@ -50,42 +58,56 @@ export class ProductService {
     return category;
   }
 
-  async updateCategory(id: string, dto: UpdateProductCategoryDto) {
-    const category = await this.getCategory(id);
+  async updateCategory(
+    user: Payload,
+    id: string,
+    dto: UpdateProductCategoryDto,
+  ) {
+    const category = await this.getCategory(user, id);
 
     Object.assign(category, dto);
 
     return this.categoryRepo.save(category);
   }
 
-  async deleteCategory(id: string) {
-    const category = await this.getCategory(id);
+  async deleteCategory(user: Payload, id: string) {
+    const category = await this.getCategory(user, id);
     await this.categoryRepo.remove(category);
   }
 
   // ---------------- PRODUCT ----------------
 
-  async createProduct(dto: CreateProductDto, picture: Express.Multer.File) {
-    return await this.productRepo.manager.transaction(async (manager) => {
-      const product = this.productRepo.create({
-        ...dto,
-        category: dto.categoryId ? ({ id: dto.categoryId } as any) : null,
-      });
+  async createProduct(
+    user: Payload,
+    dto: CreateProductDto,
+    picture: Express.Multer.File,
+  ) {
+    const companyId = targetCompanyId(user, dto.companyId);
+    const { companyId: _companyId, categoryId, ...fields } = dto;
 
-      await this.productRepo.save(product);
+    if (categoryId) await this.getCompanyCategory(categoryId, companyId);
 
-      await this.fileService.save(picture, FileType.IMAGE, product);
+    const product = await this.productRepo.save(
+      this.productRepo.create({
+        ...fields,
+        company: { id: companyId },
+        ...(categoryId ? { category: { id: categoryId } } : {}),
+      }),
+    );
 
-      return await this.getProduct({ id: product.id });
-    });
+    await this.fileService.save(picture, FileType.IMAGE, product);
+
+    return await this.getProduct({ id: product.id });
   }
 
-  async getProducts() {
+  async getProducts(user: Payload, companyId?: string) {
     return this.productRepo.find({
+      where: companyWhere(user, companyId),
       relations: { category: true, images: true },
     });
   }
 
+  // When called on behalf of a user, `where` must include the company scope.
   async getProduct(where: FindOptionsWhere<Product>) {
     const product = await this.findOne(where);
 
@@ -97,37 +119,52 @@ export class ProductService {
   async findOne(where: FindOptionsWhere<Product>) {
     return await this.productRepo.findOne({
       where,
-      relations: { category: true, images: true },
+      relations: { category: true, images: true, company: true },
     });
   }
 
-  async updateProduct(id: string, dto: UpdateProductDto) {
-    const product = await this.getProduct({ id });
+  async updateProduct(user: Payload, id: string, dto: UpdateProductDto) {
+    const product = await this.getProduct({ id, ...companyWhere(user) });
+    const { categoryId, ...fields } = dto;
 
-    Object.assign(product, dto);
+    Object.assign(product, fields);
 
-    if (dto.categoryId) {
-      product.category = {
-        id: dto.categoryId,
-      } as any;
+    if (categoryId) {
+      product.category = await this.getCompanyCategory(
+        categoryId,
+        product.company.id,
+      );
     }
 
     return this.productRepo.save(product);
   }
 
-  async deactivateProduct(id: string) {
-    const product = await this.getProduct({ id });
+  async deactivateProduct(user: Payload, id: string) {
+    const product = await this.getProduct({ id, ...companyWhere(user) });
 
     product.active = false;
 
     return this.productRepo.save(product);
   }
 
-  async activateProduct(id: string) {
-    const product = await this.getProduct({ id });
+  async activateProduct(user: Payload, id: string) {
+    const product = await this.getProduct({ id, ...companyWhere(user) });
 
     product.active = true;
 
     return this.productRepo.save(product);
+  }
+
+  // helpers
+
+  // A product may only be filed under a category of its own company.
+  private async getCompanyCategory(categoryId: string, companyId: string) {
+    const category = await this.categoryRepo.findOne({
+      where: { id: categoryId, company: { id: companyId } },
+    });
+
+    if (!category) throw new NotFoundException('Category not found');
+
+    return category;
   }
 }

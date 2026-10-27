@@ -6,8 +6,11 @@ import { UserRole } from 'src/modules/user/entities/user.entity';
 export class Payload {
   sub!: string;
   email!: string;
+  name?: string;
   role!: UserRole;
   companyId?: string;
+  // Database id (Device.id) of the registered device the session was opened on.
+  deviceId?: string;
 }
 
 @Injectable()

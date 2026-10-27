@@ -9,7 +9,9 @@ describe('FileController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [FileController],
       providers: [FileService],
-    }).compile();
+    })
+      .useMocker(() => ({}))
+      .compile();
 
     controller = module.get<FileController>(FileController);
   });

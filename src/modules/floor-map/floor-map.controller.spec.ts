@@ -9,7 +9,9 @@ describe('FloorMapController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [FloorMapController],
       providers: [FloorMapService],
-    }).compile();
+    })
+      .useMocker(() => ({}))
+      .compile();
 
     controller = module.get<FloorMapController>(FloorMapController);
   });

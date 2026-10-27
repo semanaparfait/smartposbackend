@@ -5,6 +5,12 @@ import { FloorMap } from './entities/floor-map.entity';
 import { Company } from '../company/entities/company.entity';
 import { CreateFloorMapDto } from './dto/request/create-floor-map.dto';
 import { UpdateFloorMapDto } from './dto/request/update-floor-map.dto';
+import { Payload } from 'src/util/token.service';
+import {
+  companyWhere,
+  isSuperAdmin,
+  targetCompanyId,
+} from 'src/common/utils/company-scope';
 
 @Injectable()
 export class FloorMapService {
@@ -16,14 +22,8 @@ export class FloorMapService {
     private readonly companyRepo: Repository<Company>,
   ) {}
 
-  async create(dto: CreateFloorMapDto) {
-    const company = await this.companyRepo.findOne({
-      where: { id: dto.companyId },
-    });
-
-    if (!company) {
-      throw new NotFoundException('Company not found');
-    }
+  async create(user: Payload, dto: CreateFloorMapDto) {
+    const company = await this.getCompany(targetCompanyId(user, dto.companyId));
 
     const floorMap = this.floorMapRepo.create({
       name: dto.name,
@@ -33,8 +33,9 @@ export class FloorMapService {
     return this.floorMapRepo.save(floorMap);
   }
 
-  async findAll() {
+  async findAll(user: Payload, companyId?: string) {
     return this.floorMapRepo.find({
+      where: companyWhere(user, companyId),
       relations: { company: true },
       order: {
         createdAt: 'DESC',
@@ -42,9 +43,9 @@ export class FloorMapService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(user: Payload, id: string) {
     const floorMap = await this.floorMapRepo.findOne({
-      where: { id },
+      where: { id, ...companyWhere(user) },
       relations: { company: true, rooms: true },
     });
 
@@ -55,19 +56,12 @@ export class FloorMapService {
     return floorMap;
   }
 
-  async update(id: string, dto: UpdateFloorMapDto) {
-    const floorMap = await this.findOne(id);
+  async update(user: Payload, id: string, dto: UpdateFloorMapDto) {
+    const floorMap = await this.findOne(user, id);
 
-    if (dto.companyId) {
-      const company = await this.companyRepo.findOne({
-        where: { id: dto.companyId },
-      });
-
-      if (!company) {
-        throw new NotFoundException('Company not found');
-      }
-
-      floorMap.company = company;
+    // Only a super admin may move a floor map to another company.
+    if (dto.companyId && isSuperAdmin(user)) {
+      floorMap.company = await this.getCompany(dto.companyId);
     }
 
     Object.assign(floorMap, {
@@ -77,9 +71,21 @@ export class FloorMapService {
     return this.floorMapRepo.save(floorMap);
   }
 
-  async remove(id: string) {
-    const floorMap = await this.findOne(id);
+  async remove(user: Payload, id: string) {
+    const floorMap = await this.findOne(user, id);
 
     return this.floorMapRepo.remove(floorMap);
+  }
+
+  // helpers
+
+  private async getCompany(id: string) {
+    const company = await this.companyRepo.findOne({ where: { id } });
+
+    if (!company) {
+      throw new NotFoundException('Company not found');
+    }
+
+    return company;
   }
 }

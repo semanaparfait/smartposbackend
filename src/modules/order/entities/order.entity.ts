@@ -2,6 +2,7 @@ import { BaseEntity } from 'src/common/entities/base.entity';
 import { Item } from 'src/modules/item/entities/item.entity';
 import { User } from 'src/modules/user/entities/user.entity';
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
+import { Company } from 'src/modules/company/entities/company.entity';
 
 export enum OrderStatusEnum {
   PENDING = 'PENDING',
@@ -13,6 +14,16 @@ export enum OrderStatusEnum {
 
 @Entity('orders')
 export class Order extends BaseEntity {
+  @ManyToOne(() => Company, (company) => company.orders, {
+    nullable: false,
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({
+    name: 'company_id',
+    foreignKeyConstraintName: 'FK_orders_company',
+  })
+  company!: Company;
+
   @Column({ type: 'enum', enum: OrderStatusEnum })
   status!: OrderStatusEnum;
 

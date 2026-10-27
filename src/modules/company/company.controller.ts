@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -16,6 +17,8 @@ import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from '../user/entities/user.entity';
 import { CompanyIdParam } from './dto/request/company-param.dto';
+import { User } from 'src/common/decorators/user.decorator';
+import { Payload } from 'src/util/token.service';
 
 @ApiTags('Companies')
 @Controller('companies')
@@ -38,9 +41,16 @@ export class CompanyController {
   }
 
   @Get(':companyId')
-  @ApiOperation({ summary: 'Get company by id' })
-  findOne(@Param() { companyId }: CompanyIdParam) {
-    return this.service.getOne({ id: companyId });
+  @Roles(UserRole.SUPERADMIN, UserRole.OWNER)
+  @ApiOperation({
+    summary:
+      'Get company with its users, devices (online status, current user, activity), employees and roles',
+  })
+  findOne(@User() user: Payload, @Param() { companyId }: CompanyIdParam) {
+    if (user.role !== UserRole.SUPERADMIN && user.companyId !== companyId)
+      throw new ForbiddenException('You can only view your own company');
+
+    return this.service.getDetails(companyId);
   }
 
   @Patch(':companyId')

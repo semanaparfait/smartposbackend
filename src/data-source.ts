@@ -4,6 +4,7 @@ import { config } from 'dotenv';
 config();
 
 import { envDetermine } from './config/database.config';
+import { AuditSubscriber } from './modules/audit/audit.subscriber';
 
 const envi: string = envDetermine() || 'DEV';
 
@@ -13,5 +14,6 @@ export const AppDataSource = new DataSource({
   entities: [__dirname + '/../**/*.entity{.ts,.js}'],
   migrations: ['src/database/migrations/*.ts'],
   synchronize: false,
+  subscribers: [AuditSubscriber],
   logging: true,
 });

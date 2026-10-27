@@ -19,9 +19,10 @@ import { Seat } from '../seat/entities/seat.entity';
 import { SeatService } from '../seat/seat.service';
 import { OrderService } from '../order/order.service';
 import { Item } from '../item/entities/item.entity';
-import { Order, OrderStatusEnum } from '../order/entities/order.entity';
 import { ItemService } from '../item/item.service';
 import { UserService } from '../user/user.service';
+import { Payload } from 'src/util/token.service';
+import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
 
 @Injectable()
 export class CartService {
@@ -40,23 +41,30 @@ export class CartService {
     private readonly userService: UserService,
   ) {}
 
-  async createCart(dto: CreateCartDto) {
+  async createCart(user: Payload, dto: CreateCartDto) {
+    const companyId = targetCompanyId(user, dto.companyId);
+
     let seat: Seat | undefined = undefined;
 
     if (dto.seatId) {
-      seat = await this.seatService.getSeat(dto.seatId);
+      seat = await this.seatService.getSeat(user, dto.seatId);
+
+      if (seat.room?.floorMap?.company?.id !== companyId)
+        throw new NotFoundException('Seat not found');
     }
 
     const cart = this.cartRepo.create({
       status: CartStatusEnum.ACTIVE,
+      company: { id: companyId },
       seat,
     });
 
     return this.cartRepo.save(cart);
   }
 
-  async findCarts() {
+  async findCarts(user: Payload, companyId?: string) {
     return this.cartRepo.find({
+      where: companyWhere(user, companyId),
       relations: { items: { product: { images: true } } },
       order: {
         createdAt: 'DESC',
@@ -64,12 +72,13 @@ export class CartService {
     });
   }
 
+  // When called on behalf of a user, `where` must include the company scope.
   async getCart(where: FindOptionsWhere<Cart>, manager?: EntityManager) {
     const repo = manager ? manager.getRepository(Cart) : this.cartRepo;
 
     const cart = await repo.findOne({
       where,
-      relations: { items: { product: true } },
+      relations: { items: { product: true }, company: true },
     });
 
     if (!cart) throw new NotFoundException('Cart not found');
@@ -85,15 +94,19 @@ export class CartService {
     return await this.cartRepo.save(existingCart);
   }
 
-  async checkout(userId: string, cartId: string) {
+  async checkout(actor: Payload, cartId: string) {
     return await this.dataSource.transaction(async (manager) => {
-      const user = await this.userService.findOne({ id: userId }, manager);
+      const user = await this.userService.findOne({ id: actor.sub }, manager);
 
       if (!user) throw new UnauthorizedException();
 
       const cart = await manager.findOne(Cart, {
-        where: { id: cartId, status: CartStatusEnum.ACTIVE },
-        relations: { items: { product: true } },
+        where: {
+          id: cartId,
+          status: CartStatusEnum.ACTIVE,
+          ...companyWhere(actor),
+        },
+        relations: { items: { product: true }, company: true },
       });
 
       if (!cart) throw new NotFoundException('Cart not found');
@@ -103,9 +116,10 @@ export class CartService {
 
       const order = await this.orderService.createOrder(
         {
-          subtotal: cart.totalAmount,
+          subtotal: Number(cart.totalAmount),
           tax: 0,
           user,
+          companyId: cart.company.id,
         },
         manager,
       );
@@ -116,16 +130,18 @@ export class CartService {
 
       await manager.save(Item, cart.items);
 
-      await manager.delete(Cart, { id: cart.id });
+      // remove() (rather than delete()) so the removal is recorded in the audit log.
+      await manager.remove(Cart, cart);
 
       return { ...order };
     });
   }
 
-  async abandon(cartId: string) {
+  async abandon(user: Payload, cartId: string) {
     const cart = await this.getCart({
       id: cartId,
       status: CartStatusEnum.ACTIVE,
+      ...companyWhere(user),
     });
 
     return this.cartRepo.remove(cart);

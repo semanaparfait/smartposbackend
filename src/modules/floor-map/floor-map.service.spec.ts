@@ -7,7 +7,9 @@ describe('FloorMapService', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [FloorMapService],
-    }).compile();
+    })
+      .useMocker(() => ({}))
+      .compile();
 
     service = module.get<FloorMapService>(FloorMapService);
   });

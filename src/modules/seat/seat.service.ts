@@ -5,6 +5,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Room } from '../room/entities/room.entity';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { Seat, SeatStatusEnum } from './entities/seat.entity';
+import { Payload } from 'src/util/token.service';
+import { scopeCompanyId } from 'src/common/utils/company-scope';
 
 @Injectable()
 export class SeatService {
@@ -16,14 +18,8 @@ export class SeatService {
     private readonly roomRepo: Repository<Room>,
   ) {}
 
-  async createSeat(dto: CreateSeatDto) {
-    const room = await this.roomRepo.findOne({
-      where: { id: dto.roomId },
-    });
-
-    if (!room) {
-      throw new NotFoundException('Room not found');
-    }
+  async createSeat(user: Payload, dto: CreateSeatDto) {
+    const room = await this.getRoom(user, dto.roomId);
 
     const seat = this.seatRepo.create({
       name: dto.name,
@@ -36,8 +32,9 @@ export class SeatService {
     return this.seatRepo.save(seat);
   }
 
-  async getSeats() {
+  async getSeats(user: Payload, companyId?: string) {
     return this.seatRepo.find({
+      where: this.seatScope(user, companyId),
       relations: { room: true },
       order: {
         createdAt: 'DESC',
@@ -45,8 +42,8 @@ export class SeatService {
     });
   }
 
-  async getSeat(id: string) {
-    const seat = await this.findOne({ id });
+  async getSeat(user: Payload, id: string) {
+    const seat = await this.findOne({ id, ...this.seatScope(user) });
 
     if (!seat) {
       throw new NotFoundException('Seat not found');
@@ -58,23 +55,15 @@ export class SeatService {
   async findOne(where: FindOptionsWhere<Seat>) {
     return await this.seatRepo.findOne({
       where,
-      relations: { room: true, carts: true },
+      relations: { room: { floorMap: { company: true } }, carts: true },
     });
   }
 
-  async updateSeat(id: string, dto: UpdateSeatDto) {
-    const seat = await this.getSeat(id);
+  async updateSeat(user: Payload, id: string, dto: UpdateSeatDto) {
+    const seat = await this.getSeat(user, id);
 
     if (dto.roomId) {
-      const room = await this.roomRepo.findOne({
-        where: { id: dto.roomId },
-      });
-
-      if (!room) {
-        throw new NotFoundException('Room not found');
-      }
-
-      seat.room = room;
+      seat.room = await this.getRoom(user, dto.roomId);
     }
 
     Object.assign(seat, {
@@ -87,17 +76,39 @@ export class SeatService {
     return this.seatRepo.save(seat);
   }
 
-  async changeStatus(id: string, status: SeatStatusEnum) {
-    const seat = await this.getSeat(id);
+  async changeStatus(user: Payload, id: string, status: SeatStatusEnum) {
+    const seat = await this.getSeat(user, id);
 
     seat.status = status;
 
     return this.seatRepo.save(seat);
   }
 
-  async deleteSeat(id: string) {
-    const seat = await this.getSeat(id);
+  async deleteSeat(user: Payload, id: string) {
+    const seat = await this.getSeat(user, id);
 
     return this.seatRepo.remove(seat);
+  }
+
+  // helpers
+
+  // Seats belong to a company through room -> floor map.
+  private seatScope(user: Payload, companyId?: string): FindOptionsWhere<Seat> {
+    const scope = scopeCompanyId(user, companyId);
+    return scope ? { room: { floorMap: { company: { id: scope } } } } : {};
+  }
+
+  private async getRoom(user: Payload, id: string) {
+    const scope = scopeCompanyId(user);
+
+    const room = await this.roomRepo.findOne({
+      where: { id, ...(scope ? { floorMap: { company: { id: scope } } } : {}) },
+    });
+
+    if (!room) {
+      throw new NotFoundException('Room not found');
+    }
+
+    return room;
   }
 }

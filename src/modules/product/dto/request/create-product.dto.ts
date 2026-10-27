@@ -3,6 +3,14 @@ import { Type } from 'class-transformer';
 import { IsOptional, IsString, IsNumber, IsUUID } from 'class-validator';
 
 export class CreateProductDto {
+  @ApiProperty({
+    required: false,
+    description: 'Required for super admin; ignored for others',
+  })
+  @IsOptional()
+  @IsUUID()
+  companyId?: string;
+
   @ApiProperty({ required: false })
   @IsOptional()
   @IsUUID()

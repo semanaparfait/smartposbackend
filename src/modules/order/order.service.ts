@@ -1,27 +1,17 @@
-import {
-  Injectable,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateOrderDto } from './dto/request/create-order.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatusEnum } from './entities/order.entity';
-import {
-  DataSource,
-  EntityManager,
-  FindOptionsWhere,
-  Repository,
-} from 'typeorm';
-import { UserService } from '../user/user.service';
+import { EntityManager, FindOptionsWhere, Repository } from 'typeorm';
 import { UserRole } from '../user/entities/user.entity';
+import { Payload } from 'src/util/token.service';
+import { companyWhere } from 'src/common/utils/company-scope';
 
 @Injectable()
 export class OrderService {
   constructor(
     @InjectRepository(Order)
     private readonly orderRepo: Repository<Order>,
-
-    private readonly userService: UserService,
   ) {}
 
   async createOrder(dto: CreateOrderDto, repo: EntityManager) {
@@ -29,28 +19,28 @@ export class OrderService {
       status: OrderStatusEnum.PENDING,
       subtotal: dto.subtotal,
       tax: dto.tax,
-      total: dto.subtotal - dto.tax,
+      total: dto.subtotal + dto.tax,
       note: dto.note,
       user: dto.user,
+      company: { id: dto.companyId },
     });
 
     return await repo.save(order);
   }
 
-  async getOrders(userId: string) {
-    const user = await this.userService.findOne({ id: userId });
-
-    if (!user) throw new UnauthorizedException();
-
-    let where: FindOptionsWhere<Order> = {};
-
-    if (user.role === UserRole.EMPLOYEE) where.user = { id: userId };
+  // Employees see their own orders, owners their company's, super admin everything.
+  async getOrders(user: Payload, companyId?: string) {
+    const where: FindOptionsWhere<Order> =
+      user.role === UserRole.EMPLOYEE
+        ? { user: { id: user.sub }, ...companyWhere(user) }
+        : companyWhere(user, companyId);
 
     return this.orderRepo.find({
       where,
       relations: {
         items: { product: { images: true } },
         user: { employee: true },
+        company: true,
       },
       order: {
         createdAt: 'DESC',
@@ -58,12 +48,13 @@ export class OrderService {
     });
   }
 
-  async getOrder(id: string) {
+  async getOrder(user: Payload, id: string) {
     const order = await this.orderRepo.findOne({
-      where: { id },
+      where: { id, ...companyWhere(user) },
       relations: {
         items: { product: { images: true } },
         user: { employee: true },
+        company: true,
       },
     });
 
@@ -74,27 +65,19 @@ export class OrderService {
     return order;
   }
 
-  async changeStatus(id: string, status: OrderStatusEnum) {
-    const order = await this.getOrder(id);
+  async changeStatus(user: Payload, id: string, status: OrderStatusEnum) {
+    const order = await this.getOrder(user, id);
 
     order.status = status;
 
     return this.orderRepo.save(order);
   }
 
-  async completeOrder(id: string) {
-    const order = await this.getOrder(id);
-
-    order.status = OrderStatusEnum.COMPLETED;
-
-    return this.orderRepo.save(order);
+  async completeOrder(user: Payload, id: string) {
+    return this.changeStatus(user, id, OrderStatusEnum.COMPLETED);
   }
 
-  async cancelOrder(id: string) {
-    const order = await this.getOrder(id);
-
-    order.status = OrderStatusEnum.CANCELLED;
-
-    return this.orderRepo.save(order);
+  async cancelOrder(user: Payload, id: string) {
+    return this.changeStatus(user, id, OrderStatusEnum.CANCELLED);
   }
 }

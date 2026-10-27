@@ -9,7 +9,9 @@ describe('CartController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [CartController],
       providers: [CartService],
-    }).compile();
+    })
+      .useMocker(() => ({}))
+      .compile();
 
     controller = module.get<CartController>(CartController);
   });

@@ -9,7 +9,9 @@ describe('DeviceController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [DeviceController],
       providers: [DeviceService],
-    }).compile();
+    })
+      .useMocker(() => ({}))
+      .compile();
 
     controller = module.get<DeviceController>(DeviceController);
   });

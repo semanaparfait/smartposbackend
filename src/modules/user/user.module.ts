@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './entities/user.entity';
 import { TokenService } from 'src/util/token.service';
+import { LoginThrottleService } from 'src/util/login-throttle.service';
 import { JwtModule } from '@nestjs/jwt';
 import { CompanyModule } from '../company/company.module';
 import { DeviceModule } from '../device/device.module';
@@ -20,7 +21,7 @@ import { EmployeeModule } from '../employee/employee.module';
     forwardRef(() => EmployeeModule),
   ],
   controllers: [AuthController, UserController],
-  providers: [UserService, AuthService, TokenService],
+  providers: [UserService, AuthService, TokenService, LoginThrottleService],
   exports: [UserService],
 })
 export class UserModule {}
