@@ -3,6 +3,7 @@ import { Item } from 'src/modules/item/entities/item.entity';
 import { User } from 'src/modules/user/entities/user.entity';
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
 import { Company } from 'src/modules/company/entities/company.entity';
+import { Payment } from './payment.entity';
 
 export enum OrderStatusEnum {
   PENDING = 'PENDING',
@@ -50,6 +51,9 @@ export class Order extends BaseEntity {
 
   @OneToMany(() => Item, (items) => items.order)
   items!: Item[];
+
+  @OneToMany(() => Payment, (payment) => payment.order)
+  payments!: Payment[];
 
   @ManyToOne(() => User, (user) => user.orders, { nullable: true })
   @JoinColumn({ name: 'user_id' })

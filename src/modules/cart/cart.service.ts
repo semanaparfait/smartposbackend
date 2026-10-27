@@ -19,6 +19,7 @@ import { Seat } from '../seat/entities/seat.entity';
 import { SeatService } from '../seat/seat.service';
 import { OrderService } from '../order/order.service';
 import { Item } from '../item/entities/item.entity';
+import { Order } from '../order/entities/order.entity';
 import { ItemService } from '../item/item.service';
 import { UserService } from '../user/user.service';
 import { Payload } from 'src/util/token.service';
@@ -133,7 +134,7 @@ export class CartService {
       );
 
       for (const item of cart.items) {
-        item.order = order;
+        item.order = { id: order.id, company: order.company } as Order;
       }
 
       await manager.save(Item, cart.items);
@@ -141,7 +142,7 @@ export class CartService {
       // remove() (rather than delete()) so the removal is recorded in the audit log.
       await manager.remove(Cart, cart);
 
-      return { ...order };
+      return order;
     });
   }
 

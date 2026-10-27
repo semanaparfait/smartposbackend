@@ -1,16 +1,36 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Payment, PaymentMethodEnum } from './entities/payment.entity';
 import { CreateOrderDto } from './dto/request/create-order.dto';
+import { CompleteOrderDto } from './dto/request/complete-order.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatusEnum } from './entities/order.entity';
-import { EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Payload } from 'src/util/token.service';
 import { companyWhere, ownRecordsWhere } from 'src/common/utils/company-scope';
+
+const toCents = (amount: number) => Math.round(Number(amount) * 100);
+
+function assertOpen(order: Order) {
+  if (
+    order.status === OrderStatusEnum.COMPLETED ||
+    order.status === OrderStatusEnum.CANCELLED
+  )
+    throw new BadRequestException(
+      `Order is already ${order.status.toLowerCase()}`,
+    );
+}
 
 @Injectable()
 export class OrderService {
   constructor(
     @InjectRepository(Order)
     private readonly orderRepo: Repository<Order>,
+
+    private readonly dataSource: DataSource,
   ) {}
 
   async createOrder(dto: CreateOrderDto, repo: EntityManager) {
@@ -35,6 +55,7 @@ export class OrderService {
         items: { product: { images: true } },
         user: { employee: true },
         company: true,
+        payments: true,
       },
       order: {
         createdAt: 'DESC',
@@ -49,6 +70,7 @@ export class OrderService {
         items: { product: { images: true } },
         user: { employee: true },
         company: true,
+        payments: true,
       },
     });
 
@@ -59,19 +81,80 @@ export class OrderService {
     return order;
   }
 
+  // Completing is the only way to reach COMPLETED, because that is where payment is
+  // recorded. Completed and cancelled orders are final.
   async changeStatus(user: Payload, id: string, status: OrderStatusEnum) {
+    if (status === OrderStatusEnum.COMPLETED)
+      throw new BadRequestException(
+        'Use the complete endpoint to finish an order with its payments',
+      );
+
     const order = await this.getOrder(user, id);
+
+    assertOpen(order);
 
     order.status = status;
 
     return this.orderRepo.save(order);
   }
 
-  async completeOrder(user: Payload, id: string) {
-    return this.changeStatus(user, id, OrderStatusEnum.COMPLETED);
+  async completeOrder(user: Payload, id: string, dto: CompleteOrderDto) {
+    const order = await this.getOrder(user, id);
+
+    // Compare in cents so float rounding can't reject a correct split.
+    const paid = dto.payments.reduce((sum, p) => sum + toCents(p.amount), 0);
+
+    if (paid !== toCents(order.total))
+      throw new BadRequestException(
+        `Payments add up to ${paid / 100} but the order total is ${Number(order.total)}`,
+      );
+
+    await this.dataSource.transaction(async (manager) => {
+      // Lock the order so two simultaneous completions can't both record payments.
+      const locked = await manager.findOne(Order, {
+        where: { id: order.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      assertOpen(locked!);
+
+      // Only order.id is persisted; the company is carried along for the audit log.
+      const orderRef = { id: order.id, company: order.company } as Order;
+
+      await manager.save(
+        dto.payments.map(({ method, amount, ...credit }) =>
+          manager.create(Payment, {
+            order: orderRef,
+            method,
+            amount,
+            ...(method === PaymentMethodEnum.CREDIT
+              ? credit
+              : {
+                  creditOwnerName: null,
+                  creditOwnerPhone: null,
+                  takenBy: null,
+                }),
+          }),
+        ),
+      );
+
+      // Saved without loaded relations: re-saving `order` (whose payments list is
+      // still empty) would unlink the payments just added.
+      locked!.status = OrderStatusEnum.COMPLETED;
+      locked!.company = order.company;
+      await manager.save(Order, locked!);
+    });
+
+    return this.getOrder(user, id);
   }
 
   async cancelOrder(user: Payload, id: string) {
-    return this.changeStatus(user, id, OrderStatusEnum.CANCELLED);
+    const order = await this.getOrder(user, id);
+
+    assertOpen(order);
+
+    order.status = OrderStatusEnum.CANCELLED;
+
+    return this.orderRepo.save(order);
   }
 }

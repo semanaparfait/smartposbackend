@@ -21,6 +21,7 @@ import { UserRole } from '../user/entities/user.entity';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { OrderIdParam } from './dto/request/order-param.dto';
+import { CompleteOrderDto } from './dto/request/complete-order.dto';
 
 @ApiTags('Orders')
 @Controller('orders')
@@ -60,9 +61,13 @@ export class OrderController {
   }
 
   @Patch(':orderId/complete')
-  @ApiOperation({ summary: 'Complete order' })
-  completeOrder(@User() user: Payload, @Param() { orderId }: OrderIdParam) {
-    return this.service.completeOrder(user, orderId);
+  @ApiOperation({ summary: 'Complete order and record its payments' })
+  completeOrder(
+    @User() user: Payload,
+    @Param() { orderId }: OrderIdParam,
+    @Body() dto: CompleteOrderDto,
+  ) {
+    return this.service.completeOrder(user, orderId, dto);
   }
 
   @Patch(':orderId/cancel')
