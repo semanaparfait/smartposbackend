@@ -1,5 +1,5 @@
 import { BaseEntity } from 'src/common/entities/base.entity';
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { Order } from './order.entity';
 
 export enum PaymentMethodEnum {
@@ -12,6 +12,7 @@ export enum PaymentMethodEnum {
 // One part of an order's payment; an order can be split across several methods.
 @Entity('payments')
 export class Payment extends BaseEntity {
+  @Index('IDX_payments_order')
   @ManyToOne(() => Order, (order) => order.payments, {
     nullable: false,
     onDelete: 'CASCADE',

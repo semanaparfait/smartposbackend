@@ -8,8 +8,10 @@ import {
   UseGuards,
   Delete,
   Get,
+  ParseEnumPipe,
 } from '@nestjs/common';
 import { CartService } from './cart.service';
+import { CartStatusEnum } from './entities/cart.entity';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -47,11 +49,19 @@ export class CartController {
     required: false,
     description: 'Super admin only',
   })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: CartStatusEnum,
+    description: 'Only carts in this status (omit for all)',
+  })
   async findCarts(
     @User() user: Payload,
     @Query('companyId') companyId?: string,
+    @Query('status', new ParseEnumPipe(CartStatusEnum, { optional: true }))
+    status?: CartStatusEnum,
   ) {
-    return await this.service.findCarts(user, companyId);
+    return await this.service.findCarts(user, companyId, status);
   }
 
   @Patch(':cartId/checkout')

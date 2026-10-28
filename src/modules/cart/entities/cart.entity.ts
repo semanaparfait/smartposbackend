@@ -1,7 +1,14 @@
 import { BaseEntity } from 'src/common/entities/base.entity';
 import { Item } from 'src/modules/item/entities/item.entity';
 import { Seat } from 'src/modules/seat/entities/seat.entity';
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+} from 'typeorm';
 import { Company } from 'src/modules/company/entities/company.entity';
 import { User } from 'src/modules/user/entities/user.entity';
 
@@ -10,6 +17,7 @@ export enum CartStatusEnum {
   CHECKED_OUT = 'CHECKED_OUT',
 }
 
+@Index('IDX_carts_company_status', ['company', 'status'])
 @Entity('carts')
 export class Cart extends BaseEntity {
   @ManyToOne(() => Company, (company) => company.carts, {
@@ -34,6 +42,7 @@ export class Cart extends BaseEntity {
   totalAmount!: number;
 
   // Employee who opened the cart; employees only see their own carts.
+  @Index('IDX_carts_user')
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'user_id', foreignKeyConstraintName: 'FK_carts_user' })
   user!: User | null;

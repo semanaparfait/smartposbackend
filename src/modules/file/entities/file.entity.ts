@@ -8,6 +8,7 @@ import {
   AfterLoad,
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToOne,
@@ -62,6 +63,7 @@ export class File extends BaseEntity {
   @Column('int')
   size!: number;
 
+  @Index('IDX_files_product')
   @ManyToOne(() => Product, (product) => product.images, {
     nullable: true,
     onDelete: 'CASCADE',

@@ -40,6 +40,8 @@ export class ItemService {
     });
 
     await this.addToCart(cart, product, dto.quantity);
+
+    return this.cartService.getCartView(cart.id);
   }
 
   async addItemByCode(
@@ -55,6 +57,8 @@ export class ItemService {
     });
 
     await this.addToCart(cart, product, 1);
+
+    return this.cartService.getCartView(cart.id);
   }
 
   async updateItemQuantity(user: Payload, itemId: string, quantity: number) {
@@ -63,14 +67,21 @@ export class ItemService {
     await this.setQuantity(item, quantity);
 
     await this.cartService.calculateCartTotal(item.cart.id);
+
+    return this.cartService.getCartView(item.cart.id);
   }
 
   async removeItem(user: Payload, id: string) {
     const item = await this.getActiveItem(user, id);
 
+    // remove() clears the id on the entity, so keep the cart id first.
+    const cartId = item.cart.id;
+
     await this.itemRepo.remove(item);
 
-    await this.cartService.calculateCartTotal(item.cart.id);
+    await this.cartService.calculateCartTotal(cartId);
+
+    return this.cartService.getCartView(cartId);
   }
 
   async updateItem(item: Item, manager?: EntityManager) {

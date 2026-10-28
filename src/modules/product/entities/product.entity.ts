@@ -2,6 +2,7 @@ import { BaseEntity } from 'src/common/entities/base.entity';
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -16,6 +17,7 @@ import { File } from 'src/modules/file/entities/file.entity';
 @Unique('UQ_PRODUCT_COMPANY_NAME', ['company', 'name'])
 @Unique('UQ_PRODUCT_COMPANY_BARCODE', ['company', 'barCode'])
 export class Product extends BaseEntity {
+  @Index('IDX_products_company')
   @ManyToOne(() => Company, (company) => company.products, {
     nullable: false,
     onDelete: 'CASCADE',

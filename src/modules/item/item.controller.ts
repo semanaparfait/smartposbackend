@@ -39,9 +39,9 @@ export class ItemController {
     @Param() { cartId }: CartIdParam,
     @Body() dto: AddCartItemByIdDto,
   ) {
-    await this.service.addItemById(user, cartId, dto);
+    const cart = await this.service.addItemById(user, cartId, dto);
 
-    return { message: 'Item added to cart' };
+    return { message: 'Item added to cart', cart };
   }
 
   @Post(':cartId/item/productCode')
@@ -51,9 +51,9 @@ export class ItemController {
     @Param() { cartId }: CartIdParam,
     @Body() dto: AddCartItemByCodeDto,
   ) {
-    await this.service.addItemByCode(user, cartId, dto);
+    const cart = await this.service.addItemByCode(user, cartId, dto);
 
-    return { message: 'Item added to cart' };
+    return { message: 'Item added to cart', cart };
   }
 
   @Patch(':itemId')
@@ -63,16 +63,20 @@ export class ItemController {
     @Param() { itemId }: ItemIdParam,
     @Body() dto: UpdateCartItemDto,
   ) {
-    await this.service.updateItemQuantity(user, itemId, dto.quantity);
+    const cart = await this.service.updateItemQuantity(
+      user,
+      itemId,
+      dto.quantity,
+    );
 
-    return { message: 'Item updated' };
+    return { message: 'Item updated', cart };
   }
 
   @Delete(':itemId/delete')
   @ApiOperation({ summary: 'Remove item from cart' })
   async removeItem(@User() user: Payload, @Param() { itemId }: ItemIdParam) {
-    await this.service.removeItem(user, itemId);
+    const cart = await this.service.removeItem(user, itemId);
 
-    return { message: 'Item removed from cart' };
+    return { message: 'Item removed from cart', cart };
   }
 }

@@ -69,14 +69,36 @@ export class CartService {
   }
 
   // Employees see the carts they opened, owners their company's, super admin everything.
-  async findCarts(user: Payload, companyId?: string) {
+  // Pass a status to skip the (ever-growing) checked-out history, e.g. the till
+  // only needs ACTIVE carts.
+  async findCarts(user: Payload, companyId?: string, status?: CartStatusEnum) {
     return this.cartRepo.find({
-      where: { ...companyWhere(user, companyId), ...ownRecordsWhere(user) },
+      where: {
+        ...companyWhere(user, companyId),
+        ...ownRecordsWhere(user),
+        ...(status ? { status } : {}),
+      },
       relations: { items: { product: { images: true } }, user: true },
+      // Items in the order they were added, so lines don't jump around.
       order: {
         createdAt: 'DESC',
+        items: { createdAt: 'ASC' },
       },
     });
+  }
+
+  // A cart as the till shows it (same shape as findCarts), returned after item
+  // changes so the client doesn't have to fetch the cart list again.
+  async getCartView(cartId: string) {
+    const cart = await this.cartRepo.findOne({
+      where: { id: cartId },
+      relations: { items: { product: { images: true } }, user: true },
+      order: { items: { createdAt: 'ASC' } },
+    });
+
+    if (!cart) throw new NotFoundException('Cart not found');
+
+    return cart;
   }
 
   // When called on behalf of a user, `where` must include the company and
@@ -103,7 +125,7 @@ export class CartService {
   }
 
   async checkout(actor: Payload, cartId: string) {
-    return await this.dataSource.transaction(async (manager) => {
+    const order = await this.dataSource.transaction(async (manager) => {
       const user = await this.userService.findOne({ id: actor.sub }, manager);
 
       if (!user) throw new UnauthorizedException();
@@ -144,6 +166,10 @@ export class CartService {
 
       return order;
     });
+
+    // The full order (items, payments) like GET /orders/:id, so the till can show
+    // the payment screen without fetching it again.
+    return this.orderService.getOrder(actor, order.id);
   }
 
   async abandon(user: Payload, cartId: string) {

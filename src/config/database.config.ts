@@ -26,6 +26,9 @@ function connectDb(): TypeOrmModuleOptions {
     entities: [__dirname + '/../**/*.entity{.ts,.js}'],
     synchronize: false,
     subscribers: [AuditSubscriber],
+    // Connections shared by all requests. With many tills at once, raise
+    // DB_POOL_MAX (within your database plan's connection limit).
+    extra: { max: Number(process.env.DB_POOL_MAX) || 10 },
     // logging: envi === 'DEV',
     migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
     migrationsRun: envi === 'PROD',
