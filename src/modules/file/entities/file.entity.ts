@@ -2,6 +2,7 @@ import { BaseEntity } from 'src/common/entities/base.entity';
 import { Employee } from 'src/modules/employee/entities/employee.entity';
 import { ProductCategory } from 'src/modules/product/entities/product-category.entity';
 import { Product } from 'src/modules/product/entities/product.entity';
+import { User } from 'src/modules/user/entities/user.entity';
 import {
   AfterInsert,
   AfterLoad,
@@ -81,4 +82,12 @@ export class File extends BaseEntity {
   })
   @JoinColumn({ name: 'employee_id' })
   employee!: Employee;
+
+  // Profile picture of a user without an employee record (owner, super admin).
+  @OneToOne(() => User, (user) => user.avatar, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'user_id', foreignKeyConstraintName: 'FK_files_user' })
+  user!: User;
 }

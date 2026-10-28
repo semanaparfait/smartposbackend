@@ -198,6 +198,26 @@ export class EmployeeService {
     return this.removeWithImages(employee);
   }
 
+  // Called when an employee edits their own profile.
+  async syncProfile(id: string, changes: { name: string; phone: string }) {
+    const employee = await this.findOne({ id });
+
+    if (!employee) throw new NotFoundException('Employee not found');
+
+    if (changes.phone !== employee.phone) {
+      const phoneExist = await this.findOne({
+        phone: changes.phone,
+        company: { id: employee.company.id },
+      });
+
+      if (phoneExist) throw new ConflictException('Phone already in use');
+    }
+
+    Object.assign(employee, changes);
+
+    return this.employeeRepo.save(employee);
+  }
+
   // helpers
 
   private async removeWithImages(employee: Employee) {

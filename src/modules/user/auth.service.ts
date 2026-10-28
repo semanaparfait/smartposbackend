@@ -11,6 +11,7 @@ import {
 import { LoginDto } from './dto/request/login.dto';
 import { PinLoginDto } from './dto/request/pin-login.dto';
 import { ChangePasswordDto } from './dto/request/change-password.dto';
+import { UpdateProfileDto } from './dto/request/update-profile.dto';
 import { compareHashContent } from 'src/util';
 import { Payload, TokenService } from 'src/util/token.service';
 import { LoginThrottleService } from 'src/util/login-throttle.service';
@@ -133,7 +134,15 @@ export class AuthService {
   }
 
   async me(userId: string) {
-    return await this.userService.getOne({ id: userId });
+    return await this.userService.getProfile(userId);
+  }
+
+  async updateProfile(
+    userId: string,
+    dto: UpdateProfileDto,
+    picture?: Express.Multer.File,
+  ) {
+    return await this.userService.updateProfile(userId, dto, picture);
   }
 
   private async openSession(user: User, device?: Device) {

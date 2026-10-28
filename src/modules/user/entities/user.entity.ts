@@ -1,6 +1,7 @@
 import { BaseEntity } from 'src/common/entities/base.entity';
 import { Company } from 'src/modules/company/entities/company.entity';
 import { Employee } from 'src/modules/employee/entities/employee.entity';
+import { File } from 'src/modules/file/entities/file.entity';
 import { Order } from 'src/modules/order/entities/order.entity';
 import {
   Check,
@@ -63,4 +64,8 @@ export class User extends BaseEntity {
 
   @OneToMany(() => Order, (orders) => orders.user)
   orders!: Order[];
+
+  // Employees' pictures live on their employee record (`employee.profile`).
+  @OneToOne(() => File, (file) => file.user)
+  avatar!: File;
 }

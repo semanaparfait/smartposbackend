@@ -13,10 +13,11 @@ import path from 'path';
 import { ProductCategory } from '../product/entities/product-category.entity';
 import { Product } from '../product/entities/product.entity';
 import { Employee } from '../employee/entities/employee.entity';
+import { User } from '../user/entities/user.entity';
 import { Payload } from 'src/util/token.service';
 import { companyWhere, isSuperAdmin } from 'src/common/utils/company-scope';
 
-export type ImageOwner = ProductCategory | Product | Employee;
+export type ImageOwner = ProductCategory | Product | Employee | User;
 
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -122,6 +123,7 @@ export class FileService {
             { id, product: scope },
             { id, category: scope },
             { id, employee: scope },
+            { id, user: scope },
           ],
     });
 
@@ -153,7 +155,9 @@ export class FileService {
       ? { product: { id: entity.id } }
       : entity instanceof Employee
         ? { employee: { id: entity.id } }
-        : { category: { id: entity.id } };
+        : entity instanceof User
+          ? { user: { id: entity.id } }
+          : { category: { id: entity.id } };
   }
 
   // Storage cleanup must never fail the request that triggered it.

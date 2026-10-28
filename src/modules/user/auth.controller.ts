@@ -1,5 +1,21 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileUploadInterceptor } from 'src/common/interceptors/file-upload.interceptor';
+import { UpdateProfileDto } from './dto/request/update-profile.dto';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/request/login.dto';
 import { PinLoginDto } from './dto/request/pin-login.dto';
@@ -48,5 +64,18 @@ export class AuthController {
   @ApiOperation({ summary: 'Me' })
   me(@User() user: Payload) {
     return this.authService.me(user.sub);
+  }
+
+  @Patch('me')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update own profile (name, phone, email, picture)' })
+  @UseInterceptors(new FileUploadInterceptor('picture', 1, false))
+  @ApiConsumes('multipart/form-data', 'application/json')
+  updateProfile(
+    @User() user: Payload,
+    @Body() dto: UpdateProfileDto,
+    @UploadedFile() picture?: Express.Multer.File,
+  ) {
+    return this.authService.updateProfile(user.sub, dto, picture);
   }
 }

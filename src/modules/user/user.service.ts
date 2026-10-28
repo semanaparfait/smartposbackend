@@ -16,6 +16,8 @@ import { randomBytes } from 'crypto';
 import { Company } from '../company/entities/company.entity';
 import { CompanyService } from '../company/company.service';
 import { EmployeeService } from '../employee/employee.service';
+import { FileService } from '../file/file.service';
+import { UpdateProfileDto } from './dto/request/update-profile.dto';
 
 @Injectable()
 export class UserService {
@@ -27,6 +29,8 @@ export class UserService {
 
     @Inject(forwardRef(() => EmployeeService))
     private employeeService: EmployeeService,
+
+    private fileService: FileService,
   ) {}
 
   async create(dto: CreateUserDto) {
@@ -109,8 +113,79 @@ export class UserService {
 
   async remove(id: string) {
     const user = await this.getOne({ id });
+    const images = await this.fileService.findImages(user);
     await this.userRepo.remove(user);
+    await this.fileService.deleteFromStorage(images);
     return user;
+  }
+
+  // The logged-in user's own profile, with their picture: an employee's picture is
+  // on their employee record, everyone else's is their avatar.
+  async getProfile(id: string) {
+    const user = await this.userRepo.findOne({
+      where: { id },
+      relations: { company: true, employee: { profile: true }, avatar: true },
+    });
+
+    if (!user) throw new NotFoundException('User not Found');
+
+    return { ...user, picture: user.employee?.profile ?? user.avatar ?? null };
+  }
+
+  async updateProfile(
+    id: string,
+    dto: UpdateProfileDto,
+    picture?: Express.Multer.File,
+  ) {
+    const user = await this.findWithSecrets({ id });
+
+    if (!user) throw new NotFoundException('User not Found');
+
+    if (dto.email !== undefined && dto.email !== user.email) {
+      // An employee's email links their login to their employee record.
+      if (user.employee)
+        throw new BadRequestException(
+          'Your email is managed by the company owner',
+        );
+
+      if (!(await compareHashContent(dto.currentPassword!, user.password)))
+        throw new BadRequestException('Current password is incorrect');
+
+      if (await this.userRepo.exists({ where: { email: dto.email } }))
+        throw new ConflictException('Email already in use');
+
+      user.email = dto.email;
+    }
+
+    if (dto.phone !== undefined && dto.phone !== user.phone) {
+      const taken = await this.userRepo.exists({
+        where: {
+          phone: dto.phone,
+          ...(user.company ? { company: { id: user.company.id } } : {}),
+        },
+      });
+
+      if (taken) throw new ConflictException('Phone already in use');
+
+      user.phone = dto.phone;
+    }
+
+    if (dto.name !== undefined) user.name = dto.name;
+
+    const { password: _password, pin: _pin, ...changes } = user;
+    await this.userRepo.save(changes);
+
+    // Keep the employee record (what the owner sees) in step with the login.
+    const employee = user.employee
+      ? await this.employeeService.syncProfile(user.employee.id, {
+          name: user.name,
+          phone: user.phone,
+        })
+      : null;
+
+    if (picture) await this.fileService.replaceImage(picture, employee ?? user);
+
+    return this.getProfile(id);
   }
 
   // When an employee is deleted their login is kept (their orders still point to it)

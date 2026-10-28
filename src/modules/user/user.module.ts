@@ -11,6 +11,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { CompanyModule } from '../company/company.module';
 import { DeviceModule } from '../device/device.module';
 import { EmployeeModule } from '../employee/employee.module';
+import { FileModule } from '../file/file.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { EmployeeModule } from '../employee/employee.module';
     CompanyModule,
     DeviceModule,
     forwardRef(() => EmployeeModule),
+    FileModule,
   ],
   controllers: [AuthController, UserController],
   providers: [UserService, AuthService, TokenService, LoginThrottleService],
