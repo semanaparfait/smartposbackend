@@ -62,6 +62,21 @@ export class User extends BaseEntity {
   @Column({ nullable: true })
   lastLoginAt!: Date;
 
+  // Employees only: when false, signing in on a device signs them out everywhere
+  // else. Set by the owner.
+  @Column({ name: 'allow_multiple_devices', default: false })
+  allowMultipleDevices!: boolean;
+
+  // The one session currently allowed (token `sid`) while multiple devices are
+  // not allowed. Bookkeeping, never returned.
+  @Column({
+    name: 'session_id',
+    type: 'varchar',
+    nullable: true,
+    select: false,
+  })
+  sessionId!: string | null;
+
   @OneToMany(() => Order, (orders) => orders.user)
   orders!: Order[];
 

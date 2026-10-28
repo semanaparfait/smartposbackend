@@ -1,5 +1,7 @@
 import {
+  BadRequestException,
   ConflictException,
+  ForbiddenException,
   forwardRef,
   Inject,
   Injectable,
@@ -18,6 +20,7 @@ import { UserRole } from '../user/entities/user.entity';
 import { CompanyService } from '../company/company.service';
 import { FileService } from '../file/file.service';
 import { withRequirements } from 'src/common/permissions/permissions';
+import { UpdateEmployeePermissionsDto } from './dto/request/update-employee-permissions.dto';
 import { Payload } from 'src/util/token.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
@@ -227,6 +230,54 @@ export class EmployeeService {
   async setActive(user: Payload, id: string, active: boolean) {
     await this.getEmployee(user, { id });
     await this.userService.setEmployeeActive(id, active);
+    return this.getEmployee(user, { id });
+  }
+
+  async setMultipleDevices(user: Payload, id: string, allow: boolean) {
+    await this.getEmployee(user, { id });
+    await this.userService.setAllowMultipleDevices(id, allow);
+    return this.getEmployee(user, { id });
+  }
+
+  async setPermissions(
+    user: Payload,
+    id: string,
+    dto: UpdateEmployeePermissionsDto,
+  ) {
+    const employee = await this.getEmployee(user, { id });
+
+    // Otherwise a worker allowed to manage staff could give themselves anything.
+    if (employee.user?.id === user.sub)
+      throw new ForbiddenException('You cannot change your own access');
+
+    // Stored as the owner picked them; what they require is added when the final
+    // permissions are worked out.
+    const extra = dto.extraPermissions ?? employee.extraPermissions;
+    const removed = dto.removedPermissions ?? employee.removedPermissions;
+
+    const both = extra.filter((key) => removed.includes(key));
+    if (both.length)
+      throw new BadRequestException(
+        `A permission cannot be both given and taken away: ${both.join(', ')}`,
+      );
+
+    const blocked = extra.filter((key) =>
+      withRequirements([key]).some((needed) => removed.includes(needed)),
+    );
+    if (blocked.length)
+      throw new BadRequestException(
+        `${blocked.join(', ')} needs a permission that is taken away`,
+      );
+
+    // save() (not update()) so the change is recorded in the audit history.
+    Object.assign(employee, {
+      extraPermissions: extra,
+      removedPermissions: removed,
+    });
+    await this.employeeRepo.save(employee);
+
+    if (employee.user) await this.realtime.userChanged(employee.user.id);
+
     return this.getEmployee(user, { id });
   }
 

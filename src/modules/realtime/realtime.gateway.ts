@@ -10,7 +10,12 @@ import {
 } from '@nestjs/websockets';
 import { Namespace, Socket } from 'socket.io';
 import { DataSource } from 'typeorm';
-import { Account, loadAccount } from 'src/common/permissions/account';
+import {
+  Account,
+  isCurrentSession,
+  loadAccount,
+  SIGNED_IN_ELSEWHERE,
+} from 'src/common/permissions/account';
 import { hasPermission } from 'src/common/permissions/permissions';
 import { UserRole } from '../user/entities/user.entity';
 import { RegistrationStatusEnum } from '../device/entities/device.entity';
@@ -29,6 +34,8 @@ interface SocketData {
   userId?: string;
   // Device.id (not the hardware deviceId).
   deviceId?: string;
+  // Token session id (user sockets).
+  sid?: string;
   companyId: string | null;
   rooms: string[];
 }
@@ -140,6 +147,22 @@ export class RealtimeGateway
     }
   }
 
+  async revokeOtherSessions(userId: string, sid: string, deviceId?: string) {
+    if (!this.server) return;
+
+    const sockets = await this.server.in(Rooms.user(userId)).fetchSockets();
+
+    for (const socket of sockets) {
+      if (socket.data.sid === sid) continue;
+      if (deviceId && socket.data.deviceId === deviceId) continue;
+
+      socket.emit(RealtimeEvent.SESSION_REVOKED, {
+        reason: SIGNED_IN_ELSEWHERE,
+      });
+      socket.disconnect(true);
+    }
+  }
+
   // Re-reads the user's account after their role or status changed: moves their
   // sockets in/out of the orders/devices rooms and sends the new permissions.
   async refreshUser(userId: string) {
@@ -208,6 +231,9 @@ export class RealtimeGateway
 
     if (!account.active) throw new Error('Your account has been deactivated');
 
+    if (!isCurrentSession(account, payload.sid))
+      throw new Error(SIGNED_IN_ELSEWHERE);
+
     if (payload.deviceId) {
       const status = await this.deviceStatus(payload.deviceId);
 
@@ -221,6 +247,7 @@ export class RealtimeGateway
       kind: 'user',
       userId: payload.sub,
       deviceId: payload.deviceId,
+      sid: payload.sid,
       companyId: account.companyId,
       rooms: this.roomsFor(payload.sub, account, payload.deviceId),
     };

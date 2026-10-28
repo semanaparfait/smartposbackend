@@ -11,6 +11,8 @@ export class Payload {
   companyId?: string;
   // Database id (Device.id) of the registered device the session was opened on.
   deviceId?: string;
+  // Session id, checked against users.session_id for single-device employees.
+  sid?: string;
   // Not in the token: loaded per request by RolesGuard for employees, from their
   // role's current permissions (null = role allows everything).
   permissions?: string[] | null;

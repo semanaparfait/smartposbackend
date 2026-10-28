@@ -13,7 +13,12 @@ import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { UserRole } from 'src/modules/user/entities/user.entity';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { hasPermission } from '../permissions/permissions';
-import { loadAccount, permissionsVersion } from '../permissions/account';
+import {
+  isCurrentSession,
+  loadAccount,
+  permissionsVersion,
+  SIGNED_IN_ELSEWHERE,
+} from '../permissions/account';
 import { Payload } from 'src/util/token.service';
 
 @Injectable()
@@ -54,6 +59,9 @@ export class RolesGuard implements CanActivate {
 
     if (!account?.active)
       throw new UnauthorizedException('Your account has been deactivated');
+
+    if (!isCurrentSession(account, user.sid))
+      throw new UnauthorizedException(SIGNED_IN_ELSEWHERE);
 
     user.permissions = account.permissions;
 

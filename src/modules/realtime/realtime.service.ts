@@ -75,6 +75,12 @@ export class RealtimeService {
     await Promise.all(userIds.map((id) => this.gateway.refreshUser(id)));
   }
 
+  // Ends the user's sockets from other sessions. Sockets on `deviceId` are left
+  // alone: that is the device they just signed in on.
+  signedInElsewhere(userId: string, sid: string, deviceId?: string) {
+    return this.gateway.revokeOtherSessions(userId, sid, deviceId);
+  }
+
   revokeUser(userId: string, reason: string) {
     this.gateway.revokeUser(userId, reason);
   }

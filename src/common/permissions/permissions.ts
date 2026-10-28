@@ -47,6 +47,32 @@ export function withRequirements(keys: Iterable<string>): string[] {
   return PERMISSION_KEYS.filter((key) => out.has(key));
 }
 
+// Turning a permission off also turns off everything that requires it.
+export function withoutDependents(
+  keys: Iterable<string>,
+  removed: Iterable<string>,
+): string[] {
+  const dropped = new Set(removed);
+  const isDropped = (key: string): boolean =>
+    dropped.has(key) || PERMISSIONS[key]?.some(isDropped);
+  return [...keys].filter((key) => !isDropped(key));
+}
+
+// What an employee may do: their role's permissions plus the extras the owner
+// gave them, minus the ones taken away. `role` undefined = no role (nothing);
+// a role with `null` permissions allows everything, and stays `null` while no
+// permission is taken away.
+export function effectivePermissions(
+  role: string[] | null | undefined,
+  extra: string[] = [],
+  removed: string[] = [],
+): string[] | null {
+  if (role === null && !removed.length) return null;
+
+  const base = role === null ? PERMISSION_KEYS : (role ?? []);
+  return withoutDependents(withRequirements([...base, ...extra]), removed);
+}
+
 // Permissions only limit employees: owners and super admins are governed by their
 // role alone. For employees, `null` means their role predates permissions (or was
 // saved without a list) and allows everything, matching the app.

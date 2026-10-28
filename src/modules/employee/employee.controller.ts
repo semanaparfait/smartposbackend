@@ -32,6 +32,8 @@ import { Payload } from 'src/util/token.service';
 import { FileUploadInterceptor } from 'src/common/interceptors/file-upload.interceptor';
 import { EmployeeIdParam } from './dto/request/employee-param.dto';
 import { UpdateEmployeeStatusDto } from './dto/request/update-employee-status.dto';
+import { UpdateMultipleDevicesDto } from './dto/request/update-multiple-devices.dto';
+import { UpdateEmployeePermissionsDto } from './dto/request/update-employee-permissions.dto';
 import { EmployeeRoleIdParam } from './dto/request/employee-role-param.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 
@@ -151,6 +153,32 @@ export class EmployeeController {
     @Body() dto: UpdateEmployeeStatusDto,
   ) {
     return this.service.setActive(user, employeeId, dto.active);
+  }
+
+  @Patch('employees/:employeeId/multiple-devices')
+  @RequirePermissions('employees.manage')
+  @ApiOperation({
+    summary: 'Allow or stop the employee being signed in on several devices',
+  })
+  setMultipleDevices(
+    @User() user: Payload,
+    @Param() { employeeId }: EmployeeIdParam,
+    @Body() dto: UpdateMultipleDevicesDto,
+  ) {
+    return this.service.setMultipleDevices(user, employeeId, dto.allow);
+  }
+
+  @Patch('employees/:employeeId/permissions')
+  @RequirePermissions('employees.manage', 'roles.manage')
+  @ApiOperation({
+    summary: "Adjust one employee's access on top of their role (instant)",
+  })
+  setPermissions(
+    @User() user: Payload,
+    @Param() { employeeId }: EmployeeIdParam,
+    @Body() dto: UpdateEmployeePermissionsDto,
+  ) {
+    return this.service.setPermissions(user, employeeId, dto);
   }
 
   @Delete('employees/:employeeId/delete')

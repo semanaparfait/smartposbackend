@@ -19,6 +19,8 @@ import { Payload, TokenService } from 'src/util/token.service';
 import { LoginThrottleService } from 'src/util/login-throttle.service';
 import { UserService } from './user.service';
 import { DeviceService } from '../device/device.service';
+import { RealtimeService } from '../realtime/realtime.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -30,6 +32,8 @@ export class AuthService {
     private readonly tokenService: TokenService,
 
     private readonly throttle: LoginThrottleService,
+
+    private readonly realtime: RealtimeService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -175,6 +179,17 @@ export class AuthService {
 
     if (device) await this.deviceService.recordLogin(device, user);
 
+    const sid = randomUUID();
+
+    // An employee's latest login becomes their session; unless the owner allows
+    // several devices, sessions on other devices end now.
+    if (user.role === UserRole.EMPLOYEE) {
+      await this.userService.setSession(user.id, sid);
+
+      if (!user.allowMultipleDevices)
+        await this.realtime.signedInElsewhere(user.id, sid, device?.id);
+    }
+
     const payload: Payload = {
       sub: user.id,
       email: user.email,
@@ -182,6 +197,7 @@ export class AuthService {
       role: user.role,
       companyId: user.company?.id,
       deviceId: device?.id,
+      sid,
     };
 
     return {

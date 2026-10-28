@@ -148,13 +148,13 @@ export class UserService {
     return {
       ...user,
       picture: user.employee?.profile ?? user.avatar ?? null,
-      // Same rule as RolesGuard. Left out (= everything allowed) for owners, super
-      // admins and roles saved without a list.
+      // Same rule as RolesGuard (role + the employee's extra - removed). Left out
+      // (= everything allowed) for owners, super admins and roles saved without a
+      // list.
       ...(user.role === UserRole.EMPLOYEE
         ? {
-            permissions: user.employee?.role
-              ? (user.employee.role.permissions ?? undefined)
-              : [],
+            permissions:
+              user.employee?.permissions ?? (user.employee ? undefined : []),
           }
         : {}),
     };
@@ -245,6 +245,40 @@ export class UserService {
 
     await this.userRepo.save(user);
     await this.realtime.userChanged(user.id);
+  }
+
+  // Turning it off keeps the most recent login and signs the others out.
+  async setAllowMultipleDevices(employeeId: string, allow: boolean) {
+    const user = await this.userRepo.findOne({
+      where: { employee: { id: employeeId } },
+      relations: { company: true },
+    });
+
+    if (!user) throw new BadRequestException('This employee has no login');
+
+    user.allowMultipleDevices = allow;
+
+    await this.userRepo.save(user);
+
+    if (!allow) {
+      const { sessionId } = (await this.userRepo.findOne({
+        where: { id: user.id },
+        select: { id: true, sessionId: true },
+      }))!;
+
+      if (sessionId) await this.realtime.signedInElsewhere(user.id, sessionId);
+    }
+  }
+
+  // Bookkeeping write that shouldn't appear in the audit history.
+  async setSession(id: string, sessionId: string) {
+    await this.userRepo
+      .createQueryBuilder()
+      .update()
+      .set({ sessionId })
+      .where('id = :id', { id })
+      .callListeners(false)
+      .execute();
   }
 
   // Bookkeeping write that shouldn't appear in the audit history.
