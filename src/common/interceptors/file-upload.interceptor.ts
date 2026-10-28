@@ -10,6 +10,7 @@ import { Request, Response } from 'express';
 import multer, { diskStorage } from 'multer';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import { AsyncResource } from 'async_hooks';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -66,7 +67,10 @@ export class FileUploadInterceptor implements NestInterceptor {
     })[this.maxCount > 1 ? 'array' : 'single'](this.fieldName, this.maxCount);
 
     return new Promise((resolve, reject) => {
-      upload(req, res, async (err: any) => {
+      // Multer calls back from the request stream's events, which run outside this
+      // request's async context. Bound, so the handler started below still sees the
+      // RequestContext (who is acting, for the audit log).
+      const done = AsyncResource.bind(async (err: any) => {
         const uploadedFiles = this.maxCount > 1 ? req.files : req.file;
 
         if (err) {
@@ -116,6 +120,8 @@ export class FileUploadInterceptor implements NestInterceptor {
 
         resolve(next.handle());
       });
+
+      upload(req, res, done);
     });
   }
 

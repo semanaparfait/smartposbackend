@@ -6,10 +6,12 @@ import { Company } from './entities/company.entity';
 import { DeviceActivity } from '../device/entities/device-activity.entity';
 import { AuditLog } from '../audit/entities/audit-log.entity';
 import { Order } from '../order/entities/order.entity';
+import { FileModule } from '../file/file.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Company, DeviceActivity, AuditLog, Order]),
+    FileModule,
   ],
   controllers: [CompanyController],
   providers: [CompanyService],

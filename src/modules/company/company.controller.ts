@@ -7,9 +7,16 @@ import {
   Param,
   Patch,
   Post,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CompanyService } from './company.service';
 import { CreateCompanyDto } from './dto/request/create-company.dto';
 import { UpdateCompanyDto } from './dto/request/update-company.dto';
@@ -19,6 +26,8 @@ import { UserRole } from '../user/entities/user.entity';
 import { CompanyIdParam } from './dto/request/company-param.dto';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
+import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
+import { FileUploadInterceptor } from 'src/common/interceptors/file-upload.interceptor';
 
 @ApiTags('Companies')
 @Controller('companies')
@@ -54,12 +63,23 @@ export class CompanyController {
   }
 
   @Patch(':companyId')
-  @ApiOperation({ summary: 'Update company' })
+  @Roles(UserRole.SUPERADMIN, UserRole.OWNER)
+  @RequirePermissions('settings.manage')
+  @ApiOperation({
+    summary: 'Update company profile (owners: their own company only)',
+  })
+  @UseInterceptors(new FileUploadInterceptor('logo', 1, false))
+  @ApiConsumes('multipart/form-data', 'application/json')
   update(
+    @User() user: Payload,
     @Param() { companyId }: CompanyIdParam,
     @Body() dto: UpdateCompanyDto,
+    @UploadedFile() logo?: Express.Multer.File,
   ) {
-    return this.service.update(companyId, dto);
+    if (user.role !== UserRole.SUPERADMIN && user.companyId !== companyId)
+      throw new ForbiddenException('You can only edit your own company');
+
+    return this.service.update(companyId, dto, logo);
   }
 
   @Delete(':companyId/delete')

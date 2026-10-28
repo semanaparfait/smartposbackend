@@ -104,6 +104,28 @@ export class FileService {
     await this.deleteFromStorage(old);
   }
 
+  // Uploads an image that is referenced by URL only (e.g. a company logo) and
+  // returns its optimized delivery link.
+  async uploadImage(file: Express.Multer.File, transformation: string) {
+    const uploaded = await this.uploadFile(file);
+    return uploaded.secure_url.replace(
+      '/upload/',
+      `/upload/${transformation}/`,
+    );
+  }
+
+  // Deletes an image uploaded by uploadImage, given its link. Links that aren't
+  // ours (another Cloudinary account, any other site) are left alone.
+  async deleteByUrl(url: string | null | undefined) {
+    const cloud = v2.config().cloud_name;
+    const match = url?.match(
+      /^https?:\/\/res\.cloudinary\.com\/([^/]+)\/image\/upload\/(?:[^/]*,[^/]*\/)*(?:v\d+\/)?(pos\/[^.]+)/,
+    );
+
+    if (match && match[1] === cloud)
+      await this.deleteQuietly(match[2], 'image');
+  }
+
   // Cloudinary assets of a record about to be deleted (its file rows go by cascade).
   async findImages(entity: ImageOwner) {
     return this.fileRepo.find({ where: this.ownerWhere(entity) });

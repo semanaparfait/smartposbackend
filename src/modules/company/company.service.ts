@@ -7,6 +7,7 @@ import { UpdateCompanyDto } from './dto/request/update-company.dto';
 import { DeviceActivity } from '../device/entities/device-activity.entity';
 import { AuditLog } from '../audit/entities/audit-log.entity';
 import { Order, OrderStatusEnum } from '../order/entities/order.entity';
+import { FileService } from '../file/file.service';
 
 @Injectable()
 export class CompanyService {
@@ -22,6 +23,8 @@ export class CompanyService {
 
     @InjectRepository(Order)
     private readonly orderRepo: Repository<Order>,
+
+    private readonly fileService: FileService,
   ) {}
 
   async create(dto: CreateCompanyDto) {
@@ -133,17 +136,38 @@ export class CompanyService {
     return await this.repo.findOne({ where });
   }
 
-  async update(id: string, dto: UpdateCompanyDto) {
+  async update(id: string, dto: UpdateCompanyDto, logo?: Express.Multer.File) {
     const company = await this.getOne({ id });
+    const { logo: _logo, ...fields } = dto;
+    const oldLogo = company.logo;
 
-    Object.assign(company, dto);
+    Object.assign(company, fields);
 
-    return this.repo.save(company);
+    if (logo)
+      company.logo = await this.fileService.uploadImage(
+        logo,
+        'f_auto,q_auto,c_limit,w_600',
+      );
+
+    try {
+      await this.repo.save(company);
+    } catch (error) {
+      if (logo) await this.fileService.deleteByUrl(company.logo);
+      throw error;
+    }
+
+    if (logo) await this.fileService.deleteByUrl(oldLogo);
+
+    return company;
   }
 
   async remove(id: string) {
     const company = await this.getOne({ id });
+    const logo = company.logo;
 
-    return this.repo.remove(company);
+    const removed = await this.repo.remove(company);
+    await this.fileService.deleteByUrl(logo);
+
+    return removed;
   }
 }
