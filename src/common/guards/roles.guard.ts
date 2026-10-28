@@ -3,7 +3,10 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
+import { Response } from 'express';
 import { Reflector } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 import { ROLES_KEY } from '../decorators/roles.decorator';
@@ -45,9 +48,21 @@ export class RolesGuard implements CanActivate {
 
     if (user?.role !== UserRole.EMPLOYEE) return true;
 
-    // Read live from the role, so a removed permission is refused immediately (the
-    // app itself picks role changes up at the next sign-in).
-    user.permissions = await this.loadPermissions(user.sub);
+    // Read live on every request, so deactivating a worker or changing their role
+    // takes effect immediately instead of when the token expires.
+    const account = await this.loadAccount(user.sub);
+
+    if (!account.active)
+      throw new UnauthorizedException('Your account has been deactivated');
+
+    user.permissions = account.permissions;
+
+    // Changes whenever the role's permissions change; the app refetches /auth/me
+    // when it sees a different value, so new access shows up without a re-login.
+    context
+      .switchToHttp()
+      .getResponse<Response>()
+      .setHeader('X-Permissions-Version', permissionsVersion(user.permissions));
 
     const required =
       this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
@@ -64,20 +79,34 @@ export class RolesGuard implements CanActivate {
     return true;
   }
 
-  // null = the role allows everything; an employee without a role gets nothing.
-  private async loadPermissions(userId: string): Promise<string[] | null> {
-    const rows: { role_id: string | null; permissions: string[] | null }[] =
-      await this.dataSource.query(
-        `SELECT r.id AS role_id, r.permissions
+  // permissions: null = the role allows everything; an employee without a role
+  // gets nothing.
+  private async loadAccount(
+    userId: string,
+  ): Promise<{ active: boolean; permissions: string[] | null }> {
+    const rows: {
+      active: boolean;
+      role_id: string | null;
+      permissions: string[] | null;
+    }[] = await this.dataSource.query(
+      `SELECT u.active, r.id AS role_id, r.permissions
            FROM users u
            LEFT JOIN employees e ON e.id = u.employee_id
            LEFT JOIN employee_roles r ON r.id = e.role_id
           WHERE u.id = $1`,
-        [userId],
-      );
+      [userId],
+    );
 
-    if (!rows[0]?.role_id) return [];
+    if (!rows[0]) return { active: false, permissions: [] };
 
-    return rows[0].permissions;
+    return {
+      active: rows[0].active,
+      permissions: rows[0].role_id ? rows[0].permissions : [],
+    };
   }
+}
+
+function permissionsVersion(permissions: string[] | null) {
+  const value = JSON.stringify(permissions ? [...permissions].sort() : null);
+  return createHash('sha1').update(value).digest('hex').slice(0, 12);
 }

@@ -25,7 +25,8 @@ async function bootstrap() {
 
   app.setGlobalPrefix(prefix);
 
-  app.enableCors('*');
+  // Exposed so browser clients can read it (see RolesGuard).
+  app.enableCors({ exposedHeaders: ['X-Permissions-Version'] });
 
   // app.enableCors({
   //   origin: true,

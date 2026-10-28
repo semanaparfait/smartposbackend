@@ -4,6 +4,7 @@ import {
   Body,
   Patch,
   Param,
+  ParseIntPipe,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -43,6 +44,28 @@ export class OrderController {
   })
   getOrders(@User() user: Payload, @Query('companyId') companyId?: string) {
     return this.service.getOrders(user, companyId);
+  }
+
+  // Declared before ':orderId' so it isn't read as an order id.
+  @Get('staff-performance')
+  @Roles(UserRole.OWNER)
+  @ApiOperation({ summary: 'Monthly sales totals per employee for a year' })
+  @ApiQuery({ name: 'year', required: false, example: 2026 })
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    description: 'Super admin only',
+  })
+  getStaffPerformance(
+    @User() user: Payload,
+    @Query('year', new ParseIntPipe({ optional: true })) year?: number,
+    @Query('companyId') companyId?: string,
+  ) {
+    return this.service.getStaffPerformance(
+      user,
+      year ?? new Date().getFullYear(),
+      companyId,
+    );
   }
 
   @Get(':orderId')

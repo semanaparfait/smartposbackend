@@ -12,10 +12,16 @@ import {
   DataSource,
   EntityManager,
   FindOptionsWhere,
+  In,
   Repository,
 } from 'typeorm';
 import { Payload } from 'src/util/token.service';
-import { companyWhere, ownRecordsWhere } from 'src/common/utils/company-scope';
+import {
+  companyWhere,
+  ownRecordsWhere,
+  scopeCompanyId,
+} from 'src/common/utils/company-scope';
+import { User, UserRole } from '../user/entities/user.entity';
 import {
   hasPermission,
   requirePermission,
@@ -71,6 +77,82 @@ export class OrderService {
         createdAt: 'DESC',
       },
     });
+  }
+
+  // Each employee's totals per month of `year`, for the owner's employee-of-the-month
+  // page. Summed in the database, so it stays small however many orders there are.
+  async getStaffPerformance(user: Payload, year: number, companyId?: string) {
+    const company = scopeCompanyId(user, companyId);
+    const query = this.orderRepo
+      .createQueryBuilder('o')
+      .innerJoin('o.user', 'u')
+      .select(
+        `to_char(date_trunc('month', "o"."createdAt"), 'YYYY-MM')`,
+        'month',
+      )
+      .addSelect('"u"."id"', 'userId')
+      .addSelect(
+        `COALESCE(SUM("o"."total") FILTER (WHERE "o"."status" = :completed), 0)`,
+        'sales',
+      )
+      .addSelect(`COUNT(*) FILTER (WHERE "o"."status" = :completed)`, 'orders')
+      .addSelect(
+        `COUNT(*) FILTER (WHERE "o"."status" = :cancelled)`,
+        'cancelled',
+      )
+      .addSelect(
+        `COUNT(DISTINCT date_trunc('day', "o"."createdAt"))`,
+        'activeDays',
+      )
+      .where('"o"."createdAt" >= :from AND "o"."createdAt" < :to', {
+        from: new Date(Date.UTC(year, 0, 1)),
+        to: new Date(Date.UTC(year + 1, 0, 1)),
+      })
+      .andWhere('"u"."role" = :employee', { employee: UserRole.EMPLOYEE })
+      .setParameters({
+        completed: OrderStatusEnum.COMPLETED,
+        cancelled: OrderStatusEnum.CANCELLED,
+      })
+      .groupBy('month')
+      .addGroupBy('"u"."id"')
+      .orderBy('month', 'ASC');
+    if (company) query.andWhere('"o"."company_id" = :company', { company });
+
+    const rows = await query.getRawMany<{
+      month: string;
+      userId: string;
+      sales: string;
+      orders: string;
+      cancelled: string;
+      activeDays: string;
+    }>();
+
+    const ids = [...new Set(rows.map((r) => r.userId))];
+    const users = ids.length
+      ? await this.dataSource.getRepository(User).find({
+          where: { id: In(ids) },
+          relations: { employee: { profile: true, role: true }, avatar: true },
+        })
+      : [];
+
+    return {
+      year,
+      staff: users.map((u) => ({
+        id: u.id,
+        name: u.employee?.name ?? u.name,
+        role: u.employee?.role?.name ?? null,
+        active: u.active,
+        photo: u.employee?.profile ?? u.avatar ?? null,
+      })),
+      months: rows.map((r) => ({
+        month: r.month,
+        userId: r.userId,
+        sales: Number(r.sales),
+        orders: Number(r.orders),
+        cancelled: Number(r.cancelled),
+        activeDays: Number(r.activeDays),
+      })),
+    };
   }
 
   async viewOrder(user: Payload, id: string) {

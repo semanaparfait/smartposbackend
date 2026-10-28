@@ -148,7 +148,7 @@ export class EmployeeService {
   async getEmployees(user: Payload, companyId?: string) {
     return this.employeeRepo.find({
       where: companyWhere(user, companyId),
-      relations: { role: true, company: true, profile: true },
+      relations: { role: true, company: true, profile: true, user: true },
       order: { createdAt: 'DESC' },
     });
   }
@@ -166,7 +166,7 @@ export class EmployeeService {
   async findOne(where: FindOptionsWhere<Employee>) {
     return await this.employeeRepo.findOne({
       where,
-      relations: { role: true, company: true, profile: true },
+      relations: { role: true, company: true, profile: true, user: true },
     });
   }
 
@@ -209,6 +209,12 @@ export class EmployeeService {
   async resetPin(user: Payload, id: string) {
     const employee = await this.getEmployee(user, { id });
     return this.userService.resetPin(employee.id);
+  }
+
+  async setActive(user: Payload, id: string, active: boolean) {
+    await this.getEmployee(user, { id });
+    await this.userService.setEmployeeActive(id, active);
+    return this.getEmployee(user, { id });
   }
 
   // Called when an employee edits their own profile.

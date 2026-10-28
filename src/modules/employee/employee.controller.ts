@@ -31,6 +31,7 @@ import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { FileUploadInterceptor } from 'src/common/interceptors/file-upload.interceptor';
 import { EmployeeIdParam } from './dto/request/employee-param.dto';
+import { UpdateEmployeeStatusDto } from './dto/request/update-employee-status.dto';
 import { EmployeeRoleIdParam } from './dto/request/employee-role-param.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 
@@ -139,6 +140,17 @@ export class EmployeeController {
   @ApiOperation({ summary: 'Give the employee a new PIN (shown once)' })
   resetPin(@User() user: Payload, @Param() { employeeId }: EmployeeIdParam) {
     return this.service.resetPin(user, employeeId);
+  }
+
+  @Patch('employees/:employeeId/status')
+  @RequirePermissions('employees.manage')
+  @ApiOperation({ summary: 'Activate or deactivate an employee (instant)' })
+  setStatus(
+    @User() user: Payload,
+    @Param() { employeeId }: EmployeeIdParam,
+    @Body() dto: UpdateEmployeeStatusDto,
+  ) {
+    return this.service.setActive(user, employeeId, dto.active);
   }
 
   @Delete('employees/:employeeId/delete')

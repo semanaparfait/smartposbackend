@@ -23,12 +23,12 @@ import { ChangePasswordDto } from './dto/request/change-password.dto';
 import { ChangePinDto } from './dto/request/change-pin.dto';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
-import { AuthGuard } from 'src/common/guards';
+import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Public } from 'src/common/decorators/public.decorator';
 
 @ApiTags('Authentication')
 @Controller('auth')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 

@@ -227,6 +227,19 @@ export class UserService {
     await this.userRepo.save(user);
   }
 
+  async setEmployeeActive(employeeId: string, active: boolean) {
+    const user = await this.userRepo.findOne({
+      where: { employee: { id: employeeId } },
+      relations: { company: true },
+    });
+
+    if (!user) throw new BadRequestException('This employee has no login');
+
+    user.active = active;
+
+    await this.userRepo.save(user);
+  }
+
   // Bookkeeping write that shouldn't appear in the audit history.
   async touchLastLogin(id: string, at: Date) {
     await this.userRepo
