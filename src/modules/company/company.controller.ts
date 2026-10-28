@@ -50,7 +50,8 @@ export class CompanyController {
   }
 
   @Get(':companyId')
-  @Roles(UserRole.SUPERADMIN, UserRole.OWNER)
+  @Roles(UserRole.SUPERADMIN, UserRole.OWNER, UserRole.EMPLOYEE)
+  @RequirePermissions('settings.manage')
   @ApiOperation({
     summary:
       'Get company with its users, devices (online status, current user, activity), employees and roles',
@@ -63,7 +64,7 @@ export class CompanyController {
   }
 
   @Patch(':companyId')
-  @Roles(UserRole.SUPERADMIN, UserRole.OWNER)
+  @Roles(UserRole.SUPERADMIN, UserRole.OWNER, UserRole.EMPLOYEE)
   @RequirePermissions('settings.manage')
   @ApiOperation({
     summary: 'Update company profile (owners: their own company only)',

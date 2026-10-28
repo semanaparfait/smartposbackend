@@ -17,6 +17,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { AnyEmployee } from 'src/common/decorators/any-employee.decorator';
 import { UserRole } from '../user/entities/user.entity';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
@@ -41,6 +42,7 @@ export class FloorMapController {
 
   @Get()
   @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
+  @AnyEmployee()
   @ApiOperation({ summary: 'Get all floor maps' })
   @ApiQuery({
     name: 'companyId',
@@ -53,6 +55,7 @@ export class FloorMapController {
 
   @Get(':floorMapId')
   @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
+  @AnyEmployee()
   @ApiOperation({ summary: 'Get floor map by id' })
   findOne(@User() user: Payload, @Param() { floorMapId }: FloorMapIdParam) {
     return this.service.findOne(user, floorMapId);

@@ -10,6 +10,7 @@ import { Reflector } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { ANY_EMPLOYEE_KEY } from '../decorators/any-employee.decorator';
 import { UserRole } from 'src/modules/user/entities/user.entity';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { hasPermission } from '../permissions/permissions';
@@ -77,6 +78,21 @@ export class RolesGuard implements CanActivate {
         context.getHandler(),
         context.getClass(),
       ]) ?? [];
+    // Employees only reach owner areas through a permission: an endpoint that also
+    // allows owners must say which one, or be marked @AnyEmployee(). Fails closed so
+    // opening a controller to employees never exposes an endpoint by accident.
+    const anyEmployee = this.reflector.getAllAndOverride<boolean>(
+      ANY_EMPLOYEE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (
+      requiredRoles?.includes(UserRole.OWNER) &&
+      !required.length &&
+      !anyEmployee
+    )
+      throw new ForbiddenException('Your role does not allow this');
+
     const missing = required.filter((key) => !hasPermission(user, key));
 
     if (missing.length)

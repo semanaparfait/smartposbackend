@@ -48,7 +48,8 @@ export class OrderController {
 
   // Declared before ':orderId' so it isn't read as an order id.
   @Get('staff-performance')
-  @Roles(UserRole.OWNER)
+  @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
+  @RequirePermissions('reports.view')
   @ApiOperation({ summary: 'Monthly sales totals per employee for a year' })
   @ApiQuery({ name: 'year', required: false, example: 2026 })
   @ApiQuery({

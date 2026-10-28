@@ -18,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { AnyEmployee } from 'src/common/decorators/any-employee.decorator';
 import { UserRole } from '../user/entities/user.entity';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
@@ -42,6 +43,7 @@ export class SeatController {
 
   @Get()
   @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
+  @AnyEmployee()
   @ApiOperation({ summary: 'Get all seats' })
   @ApiQuery({
     name: 'companyId',
@@ -54,6 +56,7 @@ export class SeatController {
 
   @Get(':seatId')
   @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
+  @AnyEmployee()
   @ApiOperation({ summary: 'Get seat by id' })
   getSeat(@User() user: Payload, @Param() { seatId }: SeatIdParam) {
     return this.service.getSeat(user, seatId);

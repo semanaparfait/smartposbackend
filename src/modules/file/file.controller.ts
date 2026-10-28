@@ -6,6 +6,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { AnyEmployee } from 'src/common/decorators/any-employee.decorator';
 import { FileService } from './file.service';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -16,12 +17,14 @@ import { Payload } from 'src/util/token.service';
 @ApiTags('Files')
 @Controller('file')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles(UserRole.OWNER)
+@Roles(UserRole.OWNER, UserRole.EMPLOYEE)
 @ApiBearerAuth()
 export class FileController {
   constructor(private readonly fileService: FileService) {}
 
   @Delete(':id')
+  // Which permission is needed depends on what the image belongs to (FileService).
+  @AnyEmployee()
   @ApiOperation({ summary: 'Delete an image (also removed from Cloudinary)' })
   remove(@User() user: Payload, @Param('id', ParseUUIDPipe) id: string) {
     return this.fileService.remove(user, id);

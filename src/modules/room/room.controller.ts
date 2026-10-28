@@ -18,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { AnyEmployee } from 'src/common/decorators/any-employee.decorator';
 import { UserRole } from '../user/entities/user.entity';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
@@ -45,6 +46,7 @@ export class RoomController {
 
   @Get('room-types')
   @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
+  @AnyEmployee()
   @ApiOperation({ summary: 'Get all room types' })
   @ApiQuery({
     name: 'companyId',
@@ -57,6 +59,7 @@ export class RoomController {
 
   @Get('room-types/:roomTypeId')
   @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
+  @AnyEmployee()
   @ApiOperation({ summary: 'Get room type by id' })
   getRoomType(@User() user: Payload, @Param() { roomTypeId }: RoomTypeIdParam) {
     return this.service.getRoomType(user, roomTypeId);
@@ -91,6 +94,7 @@ export class RoomController {
 
   @Get('rooms')
   @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
+  @AnyEmployee()
   @ApiOperation({ summary: 'Get all rooms' })
   @ApiQuery({
     name: 'companyId',
@@ -103,6 +107,7 @@ export class RoomController {
 
   @Get('rooms/:roomId')
   @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
+  @AnyEmployee()
   @ApiOperation({ summary: 'Get room by id' })
   getRoom(@User() user: Payload, @Param() { roomId }: RoomIdParam) {
     return this.service.getRoom(user, roomId);

@@ -33,7 +33,7 @@ import { RequirePermissions } from 'src/common/decorators/permissions.decorator'
 
 @ApiTags('Devices')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles(UserRole.OWNER, UserRole.SUPERADMIN)
+@Roles(UserRole.OWNER, UserRole.EMPLOYEE, UserRole.SUPERADMIN)
 @Controller('devices')
 @ApiBearerAuth()
 export class DeviceController {
@@ -107,6 +107,7 @@ export class DeviceController {
   }
 
   @Get()
+  @RequirePermissions('devices.manage')
   @ApiOperation({ summary: 'Get all devices' })
   @ApiQuery({
     name: 'status',
@@ -126,6 +127,7 @@ export class DeviceController {
   }
 
   @Get(':deviceId/activities')
+  @RequirePermissions('devices.manage')
   @ApiOperation({ summary: 'Get device activity log' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   activities(
@@ -142,6 +144,7 @@ export class DeviceController {
   }
 
   @Get(':deviceId')
+  @RequirePermissions('devices.manage')
   @ApiOperation({ summary: 'Get device by id' })
   findOne(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
     return this.service.getOne({ id: deviceId }, user.sub, user.role);

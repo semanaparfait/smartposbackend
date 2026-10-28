@@ -22,7 +22,7 @@ export const PERMISSIONS: Record<string, string[]> = {
   'inventory.view': [],
   'inventory.adjust': ['inventory.view'],
   'products.manage': [],
-  // Money & reports (owner area, not used by any endpoint yet)
+  // Money & reports (reports.view: staff performance and change history)
   'reports.view': [],
   'finance.verify': ['reports.view'],
   'credits.view': [],
@@ -83,6 +83,32 @@ export function hasPermission(user: Payload, key: string): boolean {
     throw new Error('Permissions were not loaded for this request');
 
   return user.permissions === null || user.permissions.includes(key);
+}
+
+// Keys an employee lacks out of `keys` (null = everything). Owners and super
+// admins lack nothing, nor does an employee whose permissions allow everything.
+export function missingPermissions(
+  user: Payload,
+  keys: string[] | null,
+): string[] {
+  if (user.role !== UserRole.EMPLOYEE) return [];
+
+  if (user.permissions === undefined)
+    throw new Error('Permissions were not loaded for this request');
+
+  const own = user.permissions;
+  if (own === null) return [];
+
+  return (keys ?? PERMISSION_KEYS).filter((key) => !own.includes(key));
+}
+
+// An employee who manages roles or staff can only hand out access they have.
+export function assertCanGrant(user: Payload, keys: string[] | null) {
+  const missing = missingPermissions(user, keys);
+  if (missing.length)
+    throw new ForbiddenException(
+      `You cannot give access you don't have (${missing.join(', ')})`,
+    );
 }
 
 // For checks that depend on the request body (e.g. paying on credit).

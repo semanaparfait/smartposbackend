@@ -40,7 +40,7 @@ import { RequirePermissions } from 'src/common/decorators/permissions.decorator'
 @ApiTags('Employees')
 @Controller()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles(UserRole.OWNER)
+@Roles(UserRole.OWNER, UserRole.EMPLOYEE)
 @ApiBearerAuth()
 export class EmployeeController {
   constructor(private readonly service: EmployeeService) {}

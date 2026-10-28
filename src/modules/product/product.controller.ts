@@ -26,6 +26,7 @@ import { CreateProductDto } from './dto/request/create-product.dto';
 import { UpdateProductDto } from './dto/request/update-product.dto';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { AnyEmployee } from 'src/common/decorators/any-employee.decorator';
 import { UserRole } from '../user/entities/user.entity';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
@@ -59,6 +60,7 @@ export class ProductController {
   }
 
   @Get('categories')
+  @AnyEmployee()
   @ApiOperation({ summary: 'Get all categories' })
   @ApiQuery({
     name: 'companyId',
@@ -70,6 +72,7 @@ export class ProductController {
   }
 
   @Get('categories/:categoryId')
+  @AnyEmployee()
   @ApiOperation({ summary: 'Get category by id' })
   getCategory(
     @User() user: Payload,
@@ -118,6 +121,7 @@ export class ProductController {
   }
 
   @Get('products')
+  @AnyEmployee()
   @ApiOperation({ summary: 'Get all products' })
   @ApiQuery({
     name: 'companyId',
@@ -129,6 +133,7 @@ export class ProductController {
   }
 
   @Get('products/:productId')
+  @AnyEmployee()
   @ApiOperation({ summary: 'Get product by id' })
   getProduct(@User() user: Payload, @Param() { productId }: ProductIdParam) {
     return this.service.getProduct({ id: productId, ...companyWhere(user) });

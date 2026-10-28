@@ -5,18 +5,20 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from '../user/entities/user.entity';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
+import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 import { AuditService } from './audit.service';
 import { AuditLogQueryDto } from './dto/audit-log-query.dto';
 
 @ApiTags('Audit Logs')
 @Controller('audit-logs')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles(UserRole.OWNER)
+@Roles(UserRole.OWNER, UserRole.EMPLOYEE)
 @ApiBearerAuth()
 export class AuditController {
   constructor(private readonly service: AuditService) {}
 
   @Get()
+  @RequirePermissions('reports.view')
   @ApiOperation({
     summary:
       'Change history: who created/updated/deleted what and when (owners see their own company)',

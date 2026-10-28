@@ -13,7 +13,8 @@ import path from 'path';
 import { ProductCategory } from '../product/entities/product-category.entity';
 import { Product } from '../product/entities/product.entity';
 import { Employee } from '../employee/entities/employee.entity';
-import { User } from '../user/entities/user.entity';
+import { User, UserRole } from '../user/entities/user.entity';
+import { requirePermission } from 'src/common/permissions/permissions';
 import { Payload } from 'src/util/token.service';
 import { companyWhere, isSuperAdmin } from 'src/common/utils/company-scope';
 
@@ -147,9 +148,22 @@ export class FileService {
             { id, employee: scope },
             { id, user: scope },
           ],
+      relations: { product: true, category: true, employee: true, user: true },
     });
 
     if (!file) throw new NotFoundException('File not found');
+
+    // Employees need the permission for the screen the image belongs to, and may
+    // only remove their own profile picture.
+    if (file.product || file.category)
+      requirePermission(user, 'products.manage');
+    if (file.employee) requirePermission(user, 'employees.manage');
+    if (
+      file.user &&
+      user.role === UserRole.EMPLOYEE &&
+      file.user.id !== user.sub
+    )
+      throw new NotFoundException('File not found');
 
     await this.fileRepo.remove(file);
     await this.deleteQuietly(file.name, file.type);

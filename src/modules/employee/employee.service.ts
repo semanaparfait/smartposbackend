@@ -19,7 +19,11 @@ import { UserService } from '../user/user.service';
 import { UserRole } from '../user/entities/user.entity';
 import { CompanyService } from '../company/company.service';
 import { FileService } from '../file/file.service';
-import { withRequirements } from 'src/common/permissions/permissions';
+import {
+  assertCanGrant,
+  missingPermissions,
+  withRequirements,
+} from 'src/common/permissions/permissions';
 import { UpdateEmployeePermissionsDto } from './dto/request/update-employee-permissions.dto';
 import { Payload } from 'src/util/token.service';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -45,6 +49,11 @@ export class EmployeeService {
   ) {}
 
   async createRole(user: Payload, dto: CreateEmployeeRoleDto) {
+    assertCanGrant(
+      user,
+      dto.permissions ? withRequirements(dto.permissions) : null,
+    );
+
     const role = this.roleRepo.create({
       name: dto.name,
       description: dto.description,
@@ -78,7 +87,9 @@ export class EmployeeService {
 
   async updateRole(user: Payload, id: string, dto: UpdateEmployeeRoleDto) {
     const role = await this.getRole(user, id);
+    await this.assertCanManageRole(user, role);
     const { permissions, ...fields } = dto;
+    if (permissions) assertCanGrant(user, withRequirements(permissions));
 
     Object.assign(role, fields);
     if (permissions) role.permissions = withRequirements(permissions);
@@ -95,6 +106,7 @@ export class EmployeeService {
 
   async deleteRole(user: Payload, id: string) {
     const role = await this.getRole(user, id);
+    await this.assertCanManageRole(user, role);
     const affected = await this.realtime.usersWithRole(id);
 
     const removed = await this.roleRepo.remove(role);
@@ -128,6 +140,7 @@ export class EmployeeService {
     if (phoneExist) throw new ConflictException('Phone Already exists');
 
     const role = await this.getCompanyRole(dto.roleId, company.id);
+    assertCanGrant(user, role.permissions);
 
     const employee = await this.fileService.createWithImage(picture, () =>
       this.employeeRepo.save(
@@ -190,12 +203,14 @@ export class EmployeeService {
     picture?: Express.Multer.File,
   ) {
     const employee = await this.getEmployee(user, { id });
+    this.assertCanManage(user, employee);
 
     if (dto.roleId) {
       employee.role = await this.getCompanyRole(
         dto.roleId,
         employee.company.id,
       );
+      assertCanGrant(user, employee.role.permissions);
     }
 
     Object.assign(employee, {
@@ -218,23 +233,25 @@ export class EmployeeService {
 
   async deleteEmployee(user: Payload, id: string) {
     const employee = await this.getEmployee(user, { id });
+    this.assertCanManage(user, employee);
 
     return this.removeWithImages(employee);
   }
 
   async resetPin(user: Payload, id: string) {
     const employee = await this.getEmployee(user, { id });
+    this.assertCanManage(user, employee);
     return this.userService.resetPin(employee.id);
   }
 
   async setActive(user: Payload, id: string, active: boolean) {
-    await this.getEmployee(user, { id });
+    this.assertCanManage(user, await this.getEmployee(user, { id }));
     await this.userService.setEmployeeActive(id, active);
     return this.getEmployee(user, { id });
   }
 
   async setMultipleDevices(user: Payload, id: string, allow: boolean) {
-    await this.getEmployee(user, { id });
+    this.assertCanManage(user, await this.getEmployee(user, { id }));
     await this.userService.setAllowMultipleDevices(id, allow);
     return this.getEmployee(user, { id });
   }
@@ -249,11 +266,13 @@ export class EmployeeService {
     // Otherwise a worker allowed to manage staff could give themselves anything.
     if (employee.user?.id === user.sub)
       throw new ForbiddenException('You cannot change your own access');
+    this.assertCanManage(user, employee);
 
     // Stored as the owner picked them; what they require is added when the final
     // permissions are worked out.
     const extra = dto.extraPermissions ?? employee.extraPermissions;
     const removed = dto.removedPermissions ?? employee.removedPermissions;
+    assertCanGrant(user, withRequirements(extra));
 
     const both = extra.filter((key) => removed.includes(key));
     if (both.length)
@@ -302,6 +321,39 @@ export class EmployeeService {
   }
 
   // helpers
+
+  // Employees managing staff cannot act on their own record (e.g. raise their
+  // salary or access) or on anyone with access they lack. Owners and super admins
+  // can manage everyone.
+  private assertCanManage(user: Payload, employee: Employee) {
+    if (user.role !== UserRole.EMPLOYEE) return;
+
+    if (employee.user?.id === user.sub)
+      throw new ForbiddenException('You cannot change your own access');
+
+    if (missingPermissions(user, employee.permissions ?? null).length)
+      throw new ForbiddenException(
+        "You cannot manage someone with access you don't have",
+      );
+  }
+
+  // Likewise for roles: not the one they are on, nor one stronger than theirs.
+  private async assertCanManageRole(user: Payload, role: EmployeeRole) {
+    if (user.role !== UserRole.EMPLOYEE) return;
+
+    const own = await this.employeeRepo.findOne({
+      where: { user: { id: user.sub } },
+      relations: { role: true },
+    });
+
+    if (own?.role?.id === role.id)
+      throw new ForbiddenException('You cannot change your own role');
+
+    if (missingPermissions(user, role.permissions).length)
+      throw new ForbiddenException(
+        "You cannot change a role with access you don't have",
+      );
+  }
 
   private async removeWithImages(employee: Employee) {
     const images = await this.fileService.findImages(employee);
