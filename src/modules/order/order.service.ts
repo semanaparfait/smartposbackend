@@ -8,9 +8,18 @@ import { CreateOrderDto } from './dto/request/create-order.dto';
 import { CompleteOrderDto } from './dto/request/complete-order.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatusEnum } from './entities/order.entity';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  FindOptionsWhere,
+  Repository,
+} from 'typeorm';
 import { Payload } from 'src/util/token.service';
 import { companyWhere, ownRecordsWhere } from 'src/common/utils/company-scope';
+import {
+  hasPermission,
+  requirePermission,
+} from 'src/common/permissions/permissions';
 
 const toCents = (amount: number) => Math.round(Number(amount) * 100);
 
@@ -48,9 +57,10 @@ export class OrderService {
   }
 
   // Employees see their own orders, owners their company's, super admin everything.
+  // With orders.view_all an employee sees the whole company's orders.
   async getOrders(user: Payload, companyId?: string) {
     return this.orderRepo.find({
-      where: { ...companyWhere(user, companyId), ...ownRecordsWhere(user) },
+      where: { ...companyWhere(user, companyId), ...this.viewScope(user) },
       relations: {
         items: { product: { images: true } },
         user: { employee: true },
@@ -63,9 +73,18 @@ export class OrderService {
     });
   }
 
-  async getOrder(user: Payload, id: string) {
+  async viewOrder(user: Payload, id: string) {
+    return this.getOrder(user, id, this.viewScope(user));
+  }
+
+  // Changing an order is limited to the employee's own orders, whatever they can see.
+  async getOrder(
+    user: Payload,
+    id: string,
+    scope: FindOptionsWhere<Order> = ownRecordsWhere(user),
+  ) {
     const order = await this.orderRepo.findOne({
-      where: { id, ...companyWhere(user), ...ownRecordsWhere(user) },
+      where: { id, ...companyWhere(user), ...scope },
       relations: {
         items: { product: { images: true } },
         user: { employee: true },
@@ -99,6 +118,11 @@ export class OrderService {
   }
 
   async completeOrder(user: Payload, id: string, dto: CompleteOrderDto) {
+    if (dto.payments.length > 1) requirePermission(user, 'sales.split_payment');
+
+    if (dto.payments.some((p) => p.method === PaymentMethodEnum.CREDIT))
+      requirePermission(user, 'sales.credit');
+
     const order = await this.getOrder(user, id);
 
     // Compare in cents so float rounding can't reject a correct split.
@@ -156,5 +180,9 @@ export class OrderService {
     order.status = OrderStatusEnum.CANCELLED;
 
     return this.orderRepo.save(order);
+  }
+
+  private viewScope(user: Payload): FindOptionsWhere<Order> {
+    return hasPermission(user, 'orders.view_all') ? {} : ownRecordsWhere(user);
   }
 }

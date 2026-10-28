@@ -17,6 +17,7 @@ import { UserService } from '../user/user.service';
 import { UserRole } from '../user/entities/user.entity';
 import { CompanyService } from '../company/company.service';
 import { FileService } from '../file/file.service';
+import { withRequirements } from 'src/common/permissions/permissions';
 import { Payload } from 'src/util/token.service';
 import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
 
@@ -41,6 +42,7 @@ export class EmployeeService {
     const role = this.roleRepo.create({
       name: dto.name,
       description: dto.description,
+      permissions: dto.permissions ? withRequirements(dto.permissions) : null,
       company: { id: targetCompanyId(user, dto.companyId) },
     });
 
@@ -70,10 +72,16 @@ export class EmployeeService {
 
   async updateRole(user: Payload, id: string, dto: UpdateEmployeeRoleDto) {
     const role = await this.getRole(user, id);
+    const { permissions, ...fields } = dto;
 
-    Object.assign(role, dto);
+    Object.assign(role, fields);
+    if (permissions) role.permissions = withRequirements(permissions);
 
-    return this.roleRepo.save(role);
+    // Saved without the loaded employees so TypeORM leaves them alone.
+    const { employees: _employees, ...changes } = role;
+    await this.roleRepo.save(changes);
+
+    return this.getRole(user, id);
   }
 
   async deleteRole(user: Payload, id: string) {

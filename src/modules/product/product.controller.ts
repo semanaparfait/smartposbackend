@@ -33,6 +33,7 @@ import { companyWhere } from 'src/common/utils/company-scope';
 import { FileUploadInterceptor } from 'src/common/interceptors/file-upload.interceptor';
 import { ProductIdParam } from './dto/request/product-param.dto';
 import { ProductCategoryIdParam } from './dto/request/product-category-param.dto';
+import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 
 @ApiTags('Products & Categories')
 @UseGuards(AuthGuard, RolesGuard)
@@ -45,6 +46,7 @@ export class ProductController {
   // ---------------- CATEGORY ----------------
 
   @Post('categories')
+  @RequirePermissions('products.manage')
   @ApiOperation({ summary: 'Create category' })
   @UseInterceptors(new FileUploadInterceptor('picture', 1))
   @ApiConsumes('multipart/form-data')
@@ -77,6 +79,7 @@ export class ProductController {
   }
 
   @Patch('categories/:categoryId')
+  @RequirePermissions('products.manage')
   @ApiOperation({ summary: 'Update category (send picture to replace it)' })
   @UseInterceptors(new FileUploadInterceptor('picture', 1, false))
   @ApiConsumes('multipart/form-data', 'application/json')
@@ -90,6 +93,7 @@ export class ProductController {
   }
 
   @Delete('categories/:categoryId/delete')
+  @RequirePermissions('products.manage')
   @ApiOperation({ summary: 'Delete category' })
   deleteCategory(
     @User() user: Payload,
@@ -101,6 +105,7 @@ export class ProductController {
   // ---------------- PRODUCT ----------------
 
   @Post('products')
+  @RequirePermissions('products.manage')
   @ApiOperation({ summary: 'Create product' })
   @UseInterceptors(new FileUploadInterceptor('picture', 1))
   @ApiConsumes('multipart/form-data')
@@ -130,6 +135,7 @@ export class ProductController {
   }
 
   @Patch('products/:productId')
+  @RequirePermissions('products.manage')
   @ApiOperation({ summary: 'Update product (send picture to replace it)' })
   @UseInterceptors(new FileUploadInterceptor('picture', 1, false))
   @ApiConsumes('multipart/form-data', 'application/json')
@@ -143,12 +149,14 @@ export class ProductController {
   }
 
   @Patch('products/:productId/deactivate')
+  @RequirePermissions('products.manage')
   @ApiOperation({ summary: 'Deactivate product' })
   deactivate(@User() user: Payload, @Param() { productId }: ProductIdParam) {
     return this.service.deactivateProduct(user, productId);
   }
 
   @Patch('products/:productId/activate')
+  @RequirePermissions('products.manage')
   @ApiOperation({ summary: 'Activate product' })
   activate(@User() user: Payload, @Param() { productId }: ProductIdParam) {
     return this.service.activateProduct(user, productId);

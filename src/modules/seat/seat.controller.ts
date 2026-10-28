@@ -21,10 +21,10 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from '../user/entities/user.entity';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
-import { SeatStatusEnum } from './entities/seat.entity';
 import { UpdateSeatDto } from './dto/request/update-seat.dto';
 import { CreateSeatDto } from './dto/request/create-seat.dto';
-import { SeatIdParam } from './dto/request/seat-param.dto';
+import { SeatIdParam, SeatStatusParam } from './dto/request/seat-param.dto';
+import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 
 @ApiTags('Seats')
 @Controller('seats')
@@ -70,12 +70,12 @@ export class SeatController {
   }
 
   @Patch(':seatId/status/:status')
+  @RequirePermissions('tables.manage')
   @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
   @ApiOperation({ summary: 'Change seat status' })
   changeStatus(
     @User() user: Payload,
-    @Param() { seatId }: SeatIdParam,
-    @Param('status') status: SeatStatusEnum,
+    @Param() { seatId, status }: SeatStatusParam,
   ) {
     return this.service.changeStatus(user, seatId, status);
   }

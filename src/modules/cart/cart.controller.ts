@@ -23,8 +23,10 @@ import { CreateCartDto } from './dto/request/create-cart.dto';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { CartIdParam } from './dto/request/cart-param.dto';
+import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 
 @ApiTags('Carts')
+@RequirePermissions('sales.create')
 @Controller('carts')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles(UserRole.EMPLOYEE)

@@ -11,6 +11,11 @@ export class EmployeeRole extends BaseEntity {
   @Column({ nullable: true })
   description!: string;
 
+  // Permission keys (see common/permissions). null = saved before permissions
+  // existed, and allows everything; [] allows nothing.
+  @Column({ type: 'text', array: true, nullable: true })
+  permissions!: string[] | null;
+
   @ManyToOne(() => Company, (company) => company.roles)
   @JoinColumn({ name: 'company_id' })
   company!: Company;

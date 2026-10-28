@@ -23,11 +23,11 @@ import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { CreateRoomTypeDto } from './dto/request/create-room-type.dto';
 import { UpdateRoomTypeDto } from './dto/request/update-room-type.dto';
-import { RoomStatusEnum } from './entities/room.entity';
 import { UpdateRoomDto } from './dto/request/update-room.dto';
 import { CreateRoomDto } from './dto/request/create-room.dto';
-import { RoomIdParam } from './dto/request/room-param.dto';
+import { RoomIdParam, RoomStatusParam } from './dto/request/room-param.dto';
 import { RoomTypeIdParam } from './dto/request/room-type-param.dto';
+import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 
 @ApiTags('Rooms & Room Types')
 @Controller()
@@ -119,12 +119,12 @@ export class RoomController {
   }
 
   @Patch('rooms/:roomId/status/:status')
+  @RequirePermissions('tables.manage')
   @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
   @ApiOperation({ summary: 'Change room status' })
   changeStatus(
     @User() user: Payload,
-    @Param() { roomId }: RoomIdParam,
-    @Param('status') status: RoomStatusEnum,
+    @Param() { roomId, status }: RoomStatusParam,
   ) {
     return this.service.changeStatus(user, roomId, status);
   }

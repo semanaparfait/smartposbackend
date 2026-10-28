@@ -32,6 +32,7 @@ import { Payload } from 'src/util/token.service';
 import { FileUploadInterceptor } from 'src/common/interceptors/file-upload.interceptor';
 import { EmployeeIdParam } from './dto/request/employee-param.dto';
 import { EmployeeRoleIdParam } from './dto/request/employee-role-param.dto';
+import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 
 @ApiTags('Employees')
 @Controller()
@@ -42,12 +43,14 @@ export class EmployeeController {
   constructor(private readonly service: EmployeeService) {}
 
   @Post('roles')
+  @RequirePermissions('roles.manage')
   @ApiOperation({ summary: 'Create role' })
   createRole(@User() user: Payload, @Body() dto: CreateEmployeeRoleDto) {
     return this.service.createRole(user, dto);
   }
 
   @Get('roles')
+  @RequirePermissions('roles.manage')
   @ApiOperation({ summary: 'Get all roles' })
   @ApiQuery({
     name: 'companyId',
@@ -59,12 +62,14 @@ export class EmployeeController {
   }
 
   @Get('roles/:roleId')
+  @RequirePermissions('roles.manage')
   @ApiOperation({ summary: 'Get role by id' })
   getRole(@User() user: Payload, @Param() { roleId }: EmployeeRoleIdParam) {
     return this.service.getRole(user, roleId);
   }
 
   @Patch('roles/:roleId')
+  @RequirePermissions('roles.manage')
   @ApiOperation({ summary: 'Update role' })
   updateRole(
     @User() user: Payload,
@@ -75,6 +80,7 @@ export class EmployeeController {
   }
 
   @Delete('roles/:roleId/delete')
+  @RequirePermissions('roles.manage')
   @ApiOperation({ summary: 'Delete role' })
   deleteRole(@User() user: Payload, @Param() { roleId }: EmployeeRoleIdParam) {
     return this.service.deleteRole(user, roleId);
@@ -83,6 +89,7 @@ export class EmployeeController {
   // ---------- Employee ---------------------
 
   @Post('employees')
+  @RequirePermissions('employees.manage')
   @ApiOperation({ summary: 'Create employee' })
   @UseInterceptors(new FileUploadInterceptor('picture', 1))
   @ApiConsumes('multipart/form-data')
@@ -95,6 +102,7 @@ export class EmployeeController {
   }
 
   @Get('employees')
+  @RequirePermissions('employees.manage')
   @ApiOperation({ summary: 'Get all employees' })
   @ApiQuery({
     name: 'companyId',
@@ -106,12 +114,14 @@ export class EmployeeController {
   }
 
   @Get('employees/:employeeId')
+  @RequirePermissions('employees.manage')
   @ApiOperation({ summary: 'Get employee by id' })
   getEmployee(@User() user: Payload, @Param() { employeeId }: EmployeeIdParam) {
     return this.service.getEmployee(user, { id: employeeId });
   }
 
   @Patch('employees/:employeeId')
+  @RequirePermissions('employees.manage')
   @ApiOperation({ summary: 'Update employee (send picture to replace it)' })
   @UseInterceptors(new FileUploadInterceptor('picture', 1, false))
   @ApiConsumes('multipart/form-data', 'application/json')
@@ -125,6 +135,7 @@ export class EmployeeController {
   }
 
   @Delete('employees/:employeeId/delete')
+  @RequirePermissions('employees.manage')
   @ApiOperation({ summary: 'Delete employee' })
   deleteEmployee(
     @User() user: Payload,

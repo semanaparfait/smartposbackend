@@ -29,6 +29,7 @@ import { Payload } from 'src/util/token.service';
 import { Public } from 'src/common/decorators/public.decorator';
 import { DeviceIdParam } from './dto/request/device-param.dto';
 import { RegistrationStatusEnum } from './entities/device.entity';
+import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 
 @ApiTags('Devices')
 @UseGuards(AuthGuard, RolesGuard)
@@ -69,6 +70,7 @@ export class DeviceController {
   }
 
   @Patch(':deviceId/registration')
+  @RequirePermissions('devices.manage')
   @ApiOperation({ summary: 'Approve/ Reject request registration' })
   handle(
     @User() user: Payload,
@@ -84,18 +86,21 @@ export class DeviceController {
   }
 
   @Patch(':deviceId/rotate-secret')
+  @RequirePermissions('devices.manage')
   @ApiOperation({ summary: 'Issue a new device secret (shown once)' })
   rotateSecret(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
     return this.service.rotateSecret(user.sub, user.role, deviceId);
   }
 
   @Patch(':deviceId/enable')
+  @RequirePermissions('devices.manage')
   @ApiOperation({ summary: 'Enable device' })
   enable(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
     return this.service.enableDevice(user.sub, user.role, deviceId);
   }
 
   @Patch(':deviceId/disable')
+  @RequirePermissions('devices.manage')
   @ApiOperation({ summary: 'Disable device' })
   disable(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
     return this.service.disableDevice(user.sub, user.role, deviceId);
@@ -143,6 +148,7 @@ export class DeviceController {
   }
 
   @Delete(':deviceId/delete')
+  @RequirePermissions('devices.manage')
   @ApiOperation({ summary: 'Delete device' })
   remove(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
     return this.service.remove(user.sub, user.role, deviceId);

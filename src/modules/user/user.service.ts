@@ -124,12 +124,28 @@ export class UserService {
   async getProfile(id: string) {
     const user = await this.userRepo.findOne({
       where: { id },
-      relations: { company: true, employee: { profile: true }, avatar: true },
+      relations: {
+        company: true,
+        employee: { profile: true, role: true },
+        avatar: true,
+      },
     });
 
     if (!user) throw new NotFoundException('User not Found');
 
-    return { ...user, picture: user.employee?.profile ?? user.avatar ?? null };
+    return {
+      ...user,
+      picture: user.employee?.profile ?? user.avatar ?? null,
+      // Same rule as RolesGuard. Left out (= everything allowed) for owners, super
+      // admins and roles saved without a list.
+      ...(user.role === UserRole.EMPLOYEE
+        ? {
+            permissions: user.employee?.role
+              ? (user.employee.role.permissions ?? undefined)
+              : [],
+          }
+        : {}),
+    };
   }
 
   async updateProfile(
