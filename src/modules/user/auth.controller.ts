@@ -20,6 +20,7 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/request/login.dto';
 import { PinLoginDto } from './dto/request/pin-login.dto';
 import { ChangePasswordDto } from './dto/request/change-password.dto';
+import { ChangePinDto } from './dto/request/change-pin.dto';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { AuthGuard } from 'src/common/guards';
@@ -50,6 +51,13 @@ export class AuthController {
   @ApiOperation({ summary: 'Logout' })
   logout(@User() user: Payload) {
     return this.authService.logout(user);
+  }
+
+  @Patch('change-pin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Change own PIN (employees)' })
+  changePin(@User() user: Payload, @Body() dto: ChangePinDto) {
+    return this.authService.changePin(user.sub, dto);
   }
 
   @Patch('change-password')

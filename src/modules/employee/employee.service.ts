@@ -206,6 +206,11 @@ export class EmployeeService {
     return this.removeWithImages(employee);
   }
 
+  async resetPin(user: Payload, id: string) {
+    const employee = await this.getEmployee(user, { id });
+    return this.userService.resetPin(employee.id);
+  }
+
   // Called when an employee edits their own profile.
   async syncProfile(id: string, changes: { name: string; phone: string }) {
     const employee = await this.findOne({ id });

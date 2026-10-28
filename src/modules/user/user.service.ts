@@ -19,6 +19,13 @@ import { EmployeeService } from '../employee/employee.service';
 import { FileService } from '../file/file.service';
 import { UpdateProfileDto } from './dto/request/update-profile.dto';
 
+// Repeated (111111) or sequential (123456, 987654) PINs are the first ones guessed.
+function isWeakPin(pin: string) {
+  const digits = [...pin].map(Number);
+  const steps = new Set(digits.slice(1).map((d, i) => d - digits[i]));
+  return steps.size === 1 && [0, 1, -1].includes([...steps][0]);
+}
+
 @Injectable()
 export class UserService {
   constructor(
@@ -240,7 +247,73 @@ export class UserService {
     await this.userRepo.save(user);
   }
 
+  // Employees sign in with their PIN alone, so it must be unique within the company.
+  // Returns false (nothing changed) when the current PIN is wrong.
+  async changePin(userId: string, currentPin: string, newPin: string) {
+    const user = await this.findWithSecrets({ id: userId });
+
+    if (!user || user.role !== UserRole.EMPLOYEE || !user.company)
+      throw new BadRequestException('Only employees have a PIN');
+
+    if (!user.pin || !(await compareHashContent(currentPin, user.pin)))
+      return false;
+
+    if (currentPin === newPin)
+      throw new BadRequestException('New PIN must be different');
+
+    if (isWeakPin(newPin))
+      throw new BadRequestException(
+        'PIN is too easy to guess (repeated or sequential digits)',
+      );
+
+    if (await this.isPinTaken(user.company.id, newPin, user.id))
+      throw new ConflictException('This PIN is not available, choose another');
+
+    await this.userRepo.save({
+      id: user.id,
+      company: user.company,
+      pin: await hashContent(newPin),
+    });
+
+    return true;
+  }
+
+  // Owner action for an employee who forgot their PIN: a new unique PIN, returned once.
+  async resetPin(employeeId: string) {
+    const user = await this.userRepo.findOne({
+      where: { employee: { id: employeeId } },
+      relations: { company: true },
+    });
+
+    if (!user) throw new NotFoundException('This employee has no login yet');
+
+    const pin = await this.generateUniquePin(user.company?.id);
+
+    await this.userRepo.save({
+      id: user.id,
+      company: user.company,
+      pin: await hashContent(pin),
+    });
+
+    return { pin };
+  }
+
   // helpers
+
+  private async isPinTaken(companyId: string, pin: string, exceptId?: string) {
+    const users = await this.findAllWithSecrets({
+      role: UserRole.EMPLOYEE,
+      company: { id: companyId },
+    });
+
+    const matches = await Promise.all(
+      users
+        .filter((u) => u.id !== exceptId && u.pin)
+        .map((u) => compareHashContent(pin, u.pin)),
+    );
+
+    return matches.includes(true);
+  }
 
   private secretsQuery(where: FindOptionsWhere<User>) {
     return this.userRepo

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import {
 import { LoginDto } from './dto/request/login.dto';
 import { PinLoginDto } from './dto/request/pin-login.dto';
 import { ChangePasswordDto } from './dto/request/change-password.dto';
+import { ChangePinDto } from './dto/request/change-pin.dto';
 import { UpdateProfileDto } from './dto/request/update-profile.dto';
 import { compareHashContent } from 'src/util';
 import { Payload, TokenService } from 'src/util/token.service';
@@ -131,6 +133,29 @@ export class AuthService {
     await this.userService.changePassword(userId, dto.newPassword);
 
     return { message: 'Password changed' };
+  }
+
+  async changePin(userId: string, dto: ChangePinDto) {
+    // Each attempt can reveal whether a PIN is in use, so attempts are limited.
+    const throttleKey = `change-pin:${userId}`;
+    this.throttle.assertAllowed(throttleKey);
+
+    try {
+      if (
+        !(await this.userService.changePin(userId, dto.currentPin, dto.newPin))
+      ) {
+        this.throttle.recordFailure(throttleKey);
+        throw new BadRequestException('Current PIN is incorrect');
+      }
+    } catch (error) {
+      if (error instanceof ConflictException)
+        this.throttle.recordFailure(throttleKey);
+      throw error;
+    }
+
+    this.throttle.reset(throttleKey);
+
+    return { message: 'PIN changed' };
   }
 
   async me(userId: string) {

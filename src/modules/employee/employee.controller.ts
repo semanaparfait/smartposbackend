@@ -134,6 +134,13 @@ export class EmployeeController {
     return this.service.updateEmployee(user, employeeId, dto, picture);
   }
 
+  @Patch('employees/:employeeId/reset-pin')
+  @RequirePermissions('employees.manage')
+  @ApiOperation({ summary: 'Give the employee a new PIN (shown once)' })
+  resetPin(@User() user: Payload, @Param() { employeeId }: EmployeeIdParam) {
+    return this.service.resetPin(user, employeeId);
+  }
+
   @Delete('employees/:employeeId/delete')
   @RequirePermissions('employees.manage')
   @ApiOperation({ summary: 'Delete employee' })

@@ -60,6 +60,13 @@ export class AuditSubscriber implements EntitySubscriberInterface {
     if (before) {
       for (const column of event.updatedColumns) {
         if (IGNORED_FIELDS.has(column.propertyName)) continue;
+
+        // Secrets are never loaded, so only record that they changed.
+        if (SECRET_FIELDS.has(column.propertyName)) {
+          changes[column.propertyName] = { from: '***', to: '***' };
+          continue;
+        }
+
         changes[column.propertyName] = {
           from: this.mask(column.propertyName, column.getEntityValue(before)),
           to: this.mask(
