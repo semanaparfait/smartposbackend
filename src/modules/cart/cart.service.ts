@@ -23,6 +23,7 @@ import { Order } from '../order/entities/order.entity';
 import { ItemService } from '../item/item.service';
 import { UserService } from '../user/user.service';
 import { Payload } from 'src/util/token.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import {
   companyWhere,
   ownRecordsWhere,
@@ -44,6 +45,8 @@ export class CartService {
     private readonly itemService: ItemService,
 
     private readonly userService: UserService,
+
+    private readonly realtime: RealtimeService,
   ) {}
 
   async createCart(user: Payload, dto: CreateCartDto) {
@@ -169,7 +172,10 @@ export class CartService {
 
     // The full order (items, payments) like GET /orders/:id, so the till can show
     // the payment screen without fetching it again.
-    return this.orderService.getOrder(actor, order.id);
+    const created = await this.orderService.getOrder(actor, order.id);
+    this.realtime.orderCreated(created);
+
+    return created;
   }
 
   async abandon(user: Payload, cartId: string) {

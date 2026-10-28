@@ -22,6 +22,7 @@ import {
   scopeCompanyId,
 } from 'src/common/utils/company-scope';
 import { User, UserRole } from '../user/entities/user.entity';
+import { RealtimeService } from '../realtime/realtime.service';
 import {
   hasPermission,
   requirePermission,
@@ -46,6 +47,8 @@ export class OrderService {
     private readonly orderRepo: Repository<Order>,
 
     private readonly dataSource: DataSource,
+
+    private readonly realtime: RealtimeService,
   ) {}
 
   async createOrder(dto: CreateOrderDto, repo: EntityManager) {
@@ -196,7 +199,7 @@ export class OrderService {
 
     order.status = status;
 
-    return this.orderRepo.save(order);
+    return this.saveAndNotify(order);
   }
 
   async completeOrder(user: Payload, id: string, dto: CompleteOrderDto) {
@@ -251,7 +254,10 @@ export class OrderService {
       await manager.save(Order, locked!);
     });
 
-    return this.getOrder(user, id);
+    const completed = await this.getOrder(user, id);
+    this.realtime.orderUpdated(completed);
+
+    return completed;
   }
 
   async cancelOrder(user: Payload, id: string) {
@@ -261,7 +267,13 @@ export class OrderService {
 
     order.status = OrderStatusEnum.CANCELLED;
 
-    return this.orderRepo.save(order);
+    return this.saveAndNotify(order);
+  }
+
+  private async saveAndNotify(order: Order) {
+    const saved = await this.orderRepo.save(order);
+    this.realtime.orderUpdated(saved);
+    return saved;
   }
 
   private viewScope(user: Payload): FindOptionsWhere<Order> {

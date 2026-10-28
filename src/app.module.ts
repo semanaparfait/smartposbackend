@@ -24,6 +24,7 @@ import { LoggerService } from './common/logger/logger.service';
 import { SeederModule } from './database/seeder/seeder.module';
 import { FileModule } from './modules/file/file.module';
 import cloudinaryConfig from './config/cloudinary.config';
+import { RealtimeModule } from './modules/realtime/realtime.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import cloudinaryConfig from './config/cloudinary.config';
     }),
     TypeOrmModule.forRootAsync(databaseConfig.asProvider()),
     SeederModule,
+    RealtimeModule,
 
     UserModule,
     CompanyModule,

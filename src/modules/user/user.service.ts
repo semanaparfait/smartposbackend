@@ -26,6 +26,8 @@ function isWeakPin(pin: string) {
   return steps.size === 1 && [0, 1, -1].includes([...steps][0]);
 }
 
+import { RealtimeService } from '../realtime/realtime.service';
+
 @Injectable()
 export class UserService {
   constructor(
@@ -38,6 +40,8 @@ export class UserService {
     private employeeService: EmployeeService,
 
     private fileService: FileService,
+
+    private realtime: RealtimeService,
   ) {}
 
   async create(dto: CreateUserDto) {
@@ -123,6 +127,7 @@ export class UserService {
     const images = await this.fileService.findImages(user);
     await this.userRepo.remove(user);
     await this.fileService.deleteFromStorage(images);
+    this.realtime.revokeUser(id, 'Your account was removed');
     return user;
   }
 
@@ -225,6 +230,7 @@ export class UserService {
     user.employee = null;
 
     await this.userRepo.save(user);
+    this.realtime.revokeUser(user.id, 'Your account was removed');
   }
 
   async setEmployeeActive(employeeId: string, active: boolean) {
@@ -238,6 +244,7 @@ export class UserService {
     user.active = active;
 
     await this.userRepo.save(user);
+    await this.realtime.userChanged(user.id);
   }
 
   // Bookkeeping write that shouldn't appear in the audit history.

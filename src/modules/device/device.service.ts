@@ -6,13 +6,18 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { Device, RegistrationStatusEnum } from './entities/device.entity';
 import { DeviceActivity } from './entities/device-activity.entity';
 import { CreateDeviceDto } from './dto/request/create-device.dto';
 import { CompanyService } from '../company/company.service';
 import { User, UserRole } from '../user/entities/user.entity';
+import { RealtimeService } from '../realtime/realtime.service';
+import {
+  deviceSecretMatches,
+  hashDeviceSecret,
+  newDeviceSecret,
+} from './device-secret';
 
 @Injectable()
 export class DeviceService {
@@ -24,6 +29,8 @@ export class DeviceService {
     private readonly activityRepo: Repository<DeviceActivity>,
 
     private readonly companyService: CompanyService,
+
+    private readonly realtime: RealtimeService,
   ) {}
 
   // Sessions opened on a device only work while it stays registered. `id` is Device.id.
@@ -75,7 +82,7 @@ export class DeviceService {
       .where('device.deviceId = :deviceId', { deviceId })
       .getOne();
 
-    if (!device || !secret || !this.secretMatches(secret, device.secretHash))
+    if (!device || !secret || !deviceSecretMatches(secret, device.secretHash))
       throw new UnauthorizedException('Invalid device secret');
 
     await this.touch(device.id, { lastSeenAt: new Date() });
@@ -87,9 +94,9 @@ export class DeviceService {
   // returned here, so the terminal must store it.
   async rotateSecret(userId: string, role: UserRole, deviceId: string) {
     const device = await this.getById(deviceId, userId, role);
-    const secret = this.newSecret();
+    const secret = newDeviceSecret();
 
-    device.secretHash = this.hashSecret(secret);
+    device.secretHash = hashDeviceSecret(secret);
     await this.deviceRepo.save(device);
 
     return { deviceId: device.deviceId, deviceSecret: secret };
@@ -197,7 +204,7 @@ export class DeviceService {
       );
     }
 
-    const secret = this.newSecret();
+    const secret = newDeviceSecret();
 
     const device = await this.deviceRepo.save(
       Object.assign(existing ?? this.deviceRepo.create(), {
@@ -206,11 +213,13 @@ export class DeviceService {
         deviceOs: dto.deviceOs,
         company,
         registrationStatus: RegistrationStatusEnum.PENDING,
-        secretHash: this.hashSecret(secret),
+        secretHash: hashDeviceSecret(secret),
       }),
     );
 
     const { secretHash: _secretHash, ...result } = device;
+
+    this.realtime.deviceRequested(result as Device);
 
     // Returned only once: the terminal must store it and send it with heartbeats.
     return { ...result, deviceSecret: secret };
@@ -239,7 +248,7 @@ export class DeviceService {
       device.registrationStatus = RegistrationStatusEnum.REJECTED;
     }
 
-    return this.deviceRepo.save(device);
+    return this.saveAndNotify(device);
   }
 
   async enableDevice(userId: string, role: UserRole, deviceId: string) {
@@ -251,7 +260,7 @@ export class DeviceService {
 
     device.registrationStatus = RegistrationStatusEnum.REGISTERED;
 
-    return this.deviceRepo.save(device);
+    return this.saveAndNotify(device);
   }
 
   async disableDevice(userId: string, role: UserRole, deviceId: string) {
@@ -265,7 +274,7 @@ export class DeviceService {
     // Whoever was using it is logged out (see assertUsable).
     device.currentUser = null;
 
-    return this.deviceRepo.save(device);
+    return this.saveAndNotify(device);
   }
 
   async findAll(
@@ -314,7 +323,19 @@ export class DeviceService {
 
   async remove(userId: string, role: UserRole, deviceId: string) {
     const device = await this.getById(deviceId, userId, role);
-    return this.deviceRepo.remove(device);
+    // remove() clears the id on the entity.
+    const { id, company } = device;
+
+    const removed = await this.deviceRepo.remove(device);
+    await this.realtime.deviceRemoved(id, company?.id);
+
+    return removed;
+  }
+
+  private async saveAndNotify(device: Device) {
+    const saved = await this.deviceRepo.save(device);
+    await this.realtime.deviceUpdated(saved);
+    return saved;
   }
 
   private async getById(deviceId: string, userId: string, role: UserRole) {
@@ -331,24 +352,6 @@ export class DeviceService {
       .where('id = :id', { id })
       .callListeners(false)
       .execute();
-  }
-
-  private newSecret() {
-    return randomBytes(32).toString('hex');
-  }
-
-  // The secret is random and high-entropy, so a fast hash is sufficient.
-  private hashSecret(secret: string) {
-    return createHash('sha256').update(secret).digest('hex');
-  }
-
-  private secretMatches(secret: string, hash?: string | null) {
-    if (!hash) return false;
-
-    const a = Buffer.from(this.hashSecret(secret), 'hex');
-    const b = Buffer.from(hash, 'hex');
-
-    return a.length === b.length && timingSafeEqual(a, b);
   }
 
   private async getUserCompany(userId: string, role?: UserRole) {

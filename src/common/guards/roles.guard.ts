@@ -5,7 +5,6 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { createHash } from 'crypto';
 import { Response } from 'express';
 import { Reflector } from '@nestjs/core';
 import { DataSource } from 'typeorm';
@@ -14,6 +13,7 @@ import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { UserRole } from 'src/modules/user/entities/user.entity';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { hasPermission } from '../permissions/permissions';
+import { loadAccount, permissionsVersion } from '../permissions/account';
 import { Payload } from 'src/util/token.service';
 
 @Injectable()
@@ -50,9 +50,9 @@ export class RolesGuard implements CanActivate {
 
     // Read live on every request, so deactivating a worker or changing their role
     // takes effect immediately instead of when the token expires.
-    const account = await this.loadAccount(user.sub);
+    const account = await loadAccount(this.dataSource, user.sub);
 
-    if (!account.active)
+    if (!account?.active)
       throw new UnauthorizedException('Your account has been deactivated');
 
     user.permissions = account.permissions;
@@ -78,35 +78,4 @@ export class RolesGuard implements CanActivate {
 
     return true;
   }
-
-  // permissions: null = the role allows everything; an employee without a role
-  // gets nothing.
-  private async loadAccount(
-    userId: string,
-  ): Promise<{ active: boolean; permissions: string[] | null }> {
-    const rows: {
-      active: boolean;
-      role_id: string | null;
-      permissions: string[] | null;
-    }[] = await this.dataSource.query(
-      `SELECT u.active, r.id AS role_id, r.permissions
-           FROM users u
-           LEFT JOIN employees e ON e.id = u.employee_id
-           LEFT JOIN employee_roles r ON r.id = e.role_id
-          WHERE u.id = $1`,
-      [userId],
-    );
-
-    if (!rows[0]) return { active: false, permissions: [] };
-
-    return {
-      active: rows[0].active,
-      permissions: rows[0].role_id ? rows[0].permissions : [],
-    };
-  }
-}
-
-function permissionsVersion(permissions: string[] | null) {
-  const value = JSON.stringify(permissions ? [...permissions].sort() : null);
-  return createHash('sha1').update(value).digest('hex').slice(0, 12);
 }

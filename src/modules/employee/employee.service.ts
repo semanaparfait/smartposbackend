@@ -19,6 +19,7 @@ import { CompanyService } from '../company/company.service';
 import { FileService } from '../file/file.service';
 import { withRequirements } from 'src/common/permissions/permissions';
 import { Payload } from 'src/util/token.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
 
 @Injectable()
@@ -36,6 +37,8 @@ export class EmployeeService {
     private readonly companyService: CompanyService,
 
     private readonly fileService: FileService,
+
+    private readonly realtime: RealtimeService,
   ) {}
 
   async createRole(user: Payload, dto: CreateEmployeeRoleDto) {
@@ -81,13 +84,20 @@ export class EmployeeService {
     const { employees: _employees, ...changes } = role;
     await this.roleRepo.save(changes);
 
+    if (permissions)
+      await this.realtime.usersChanged(await this.realtime.usersWithRole(id));
+
     return this.getRole(user, id);
   }
 
   async deleteRole(user: Payload, id: string) {
     const role = await this.getRole(user, id);
+    const affected = await this.realtime.usersWithRole(id);
 
-    return this.roleRepo.remove(role);
+    const removed = await this.roleRepo.remove(role);
+    await this.realtime.usersChanged(affected);
+
+    return removed;
   }
 
   async createEmployee(
@@ -196,6 +206,9 @@ export class EmployeeService {
     await this.employeeRepo.save(employee);
 
     if (picture) await this.fileService.replaceImage(picture, employee);
+
+    if (dto.roleId && employee.user)
+      await this.realtime.userChanged(employee.user.id);
 
     return this.getEmployee(user, { id });
   }
