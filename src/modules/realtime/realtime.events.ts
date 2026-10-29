@@ -17,8 +17,25 @@ export const RealtimeEvent = {
   DEVICE_PRESENCE: 'device.presence',
 
   // To the device itself (terminal socket and anyone signed in on it):
-  // { status } whenever it is approved, rejected, disabled or enabled.
+  // { status, type, displayForId } on connect and whenever it is approved,
+  // rejected, disabled, enabled or given another type.
   DEVICE_STATUS: 'device.status',
+
+  // To the customer displays paired with the till that made the change. Only
+  // what a customer may see (names, quantities, selling prices, totals).
+  // display.preview: { cart } relayed as-is from the till the moment the cashier
+  // taps or scans (before the server has saved anything), so the screen reacts
+  // instantly. The till sends it on its own socket (same event name); display.cart
+  // follows with the saved cart and replaces it.
+  DISPLAY_PREVIEW: 'display.preview',
+  // display.cart: { cart } after items are added, changed or removed.
+  DISPLAY_CART: 'display.cart',
+  // display.order: { order } when the cart is turned into an order to pay.
+  DISPLAY_ORDER: 'display.order',
+  // display.paid: { order } (with payments) when it is paid.
+  DISPLAY_PAID: 'display.paid',
+  // display.cleared: {} when the cart is dropped or the order cancelled.
+  DISPLAY_CLEARED: 'display.cleared',
 
   // To the signed-in user: { permissions, version } after their role changed.
   PERMISSIONS_CHANGED: 'permissions.changed',
@@ -35,5 +52,7 @@ export const Rooms = {
   orders: (companyId: string) => `orders:${companyId}`,
   // Owners and employees with devices.manage.
   devices: (companyId: string) => `devices:${companyId}`,
+  // Customer displays paired with the till (Device.id).
+  display: (tillId: string) => `display:${tillId}`,
   admin: 'admin',
 };

@@ -1,12 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { User, UserRole } from './entities/user.entity';
 import {
   Device,
+  DeviceTypeEnum,
   RegistrationStatusEnum,
 } from '../device/entities/device.entity';
 import { LoginDto } from './dto/request/login.dto';
@@ -175,6 +177,9 @@ export class AuthService {
   }
 
   private async openSession(user: User, device?: Device) {
+    if (device?.type === DeviceTypeEnum.CUSTOMER_DISPLAY)
+      throw new ForbiddenException('Nobody signs in on a customer display');
+
     await this.userService.touchLastLogin(user.id, new Date());
 
     if (device) await this.deviceService.recordLogin(device, user);

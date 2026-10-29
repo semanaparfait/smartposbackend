@@ -24,6 +24,8 @@ import { Payload } from 'src/util/token.service';
 import { OrderIdParam } from './dto/request/order-param.dto';
 import { CompleteOrderDto } from './dto/request/complete-order.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
+import { DeviceTypes } from 'src/common/decorators/device-types.decorator';
+import { DeviceTypeEnum } from '../device/entities/device.entity';
 
 @ApiTags('Orders')
 @Controller('orders')
@@ -34,6 +36,7 @@ export class OrderController {
   constructor(private readonly service: OrderService) {}
 
   @Get()
+  @DeviceTypes(DeviceTypeEnum.POS_TERMINAL, DeviceTypeEnum.KITCHEN_DISPLAY)
   @RequirePermissions('orders.view_own')
   @Roles(UserRole.EMPLOYEE, UserRole.OWNER)
   @ApiOperation({ summary: 'Get all orders' })
@@ -70,6 +73,7 @@ export class OrderController {
   }
 
   @Get(':orderId')
+  @DeviceTypes(DeviceTypeEnum.POS_TERMINAL, DeviceTypeEnum.KITCHEN_DISPLAY)
   @RequirePermissions('orders.view_own')
   @Roles(UserRole.EMPLOYEE, UserRole.OWNER)
   @ApiOperation({ summary: 'Get order by id' })
@@ -78,6 +82,7 @@ export class OrderController {
   }
 
   @Patch(':orderId/status')
+  @DeviceTypes(DeviceTypeEnum.POS_TERMINAL, DeviceTypeEnum.KITCHEN_DISPLAY)
   @RequirePermissions('sales.create')
   @ApiOperation({ summary: 'Change order status' })
   changeStatus(
@@ -89,6 +94,7 @@ export class OrderController {
   }
 
   @Patch(':orderId/complete')
+  @DeviceTypes(DeviceTypeEnum.POS_TERMINAL)
   @RequirePermissions('sales.checkout')
   @ApiOperation({ summary: 'Complete order and record its payments' })
   completeOrder(
@@ -100,6 +106,7 @@ export class OrderController {
   }
 
   @Patch(':orderId/cancel')
+  @DeviceTypes(DeviceTypeEnum.POS_TERMINAL)
   @RequirePermissions('sales.cancel')
   @ApiOperation({ summary: 'Cancel order' })
   cancelOrder(@User() user: Payload, @Param() { orderId }: OrderIdParam) {

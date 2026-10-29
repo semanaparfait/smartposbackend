@@ -7,7 +7,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
-import { Device, RegistrationStatusEnum } from './entities/device.entity';
+import {
+  Device,
+  RegistrationStatusEnum,
+  DeviceTypeEnum,
+  deviceMomoCode,
+} from './entities/device.entity';
 import { DeviceActivity } from './entities/device-activity.entity';
 import { CreateDeviceDto } from './dto/request/create-device.dto';
 import { CompanyService } from '../company/company.service';
@@ -18,6 +23,8 @@ import {
   hashDeviceSecret,
   newDeviceSecret,
 } from './device-secret';
+
+import { UpdateDeviceTypeDto } from './dto/request/update-device-type.dto';
 
 @Injectable()
 export class DeviceService {
@@ -70,6 +77,7 @@ export class DeviceService {
             logo: device.company.logo ?? null,
           }
         : null,
+      momoCode: isValid ? deviceMomoCode(device) : null,
     };
   }
 
@@ -230,6 +238,7 @@ export class DeviceService {
     role: UserRole,
     deviceId: string,
     action: 'APPROVE' | 'REJECT',
+    type?: DeviceTypeEnum,
   ) {
     const device = await this.getById(deviceId, userId, role);
 
@@ -244,11 +253,76 @@ export class DeviceService {
 
     if (action === 'APPROVE') {
       device.registrationStatus = RegistrationStatusEnum.REGISTERED;
+      if (type) device.type = type;
     } else {
       device.registrationStatus = RegistrationStatusEnum.REJECTED;
     }
 
     return this.saveAndNotify(device);
+  }
+
+  // The owner decides what a device is used for; the device app switches screen
+  // live (device.status) and the server only allows what fits the type.
+  async setType(
+    userId: string,
+    role: UserRole,
+    deviceId: string,
+    dto: UpdateDeviceTypeDto,
+  ) {
+    const device = await this.getById(deviceId, userId, role);
+
+    if (dto.type !== DeviceTypeEnum.CUSTOMER_DISPLAY) {
+      if (dto.displayForId)
+        throw new BadRequestException(
+          'Only a customer display can be paired with a till',
+        );
+      device.displayFor = null;
+    } else if (dto.displayForId === null) {
+      device.displayFor = null;
+    } else if (dto.displayForId) {
+      if (dto.displayForId === device.id)
+        throw new BadRequestException('A display cannot be paired with itself');
+
+      const till = await this.findOne({
+        id: dto.displayForId,
+        company: { id: device.company?.id },
+      });
+
+      if (!till) throw new NotFoundException('Till not found');
+
+      if (till.type !== DeviceTypeEnum.POS_TERMINAL)
+        throw new BadRequestException(
+          'A customer display can only be paired with a POS terminal',
+        );
+
+      device.displayFor = till;
+    }
+
+    device.type = dto.type;
+
+    return this.saveAndNotify(device);
+  }
+
+  async setMomoCode(
+    userId: string,
+    role: UserRole,
+    deviceId: string,
+    momoCode: string | null,
+  ) {
+    const device = await this.getById(deviceId, userId, role);
+
+    device.momoCode = momoCode || null;
+
+    const saved = await this.saveAndNotify(device);
+
+    // Displays without a code of their own show this till's.
+    const displays = await this.deviceRepo.find({
+      where: { displayFor: { id: saved.id } },
+      relations: { displayFor: true },
+    });
+    displays.forEach((display) => this.realtime.deviceStatus(display));
+
+    return saved;
   }
 
   async enableDevice(userId: string, role: UserRole, deviceId: string) {
@@ -289,7 +363,7 @@ export class DeviceService {
         ...(company ? { company: { id: company.id } } : {}),
         ...(status ? { registrationStatus: status } : {}),
       },
-      relations: { company: true, currentUser: true },
+      relations: { company: true, currentUser: true, displayFor: true },
       order: { createdAt: 'DESC' },
     });
   }
@@ -297,7 +371,7 @@ export class DeviceService {
   findOne(where: FindOptionsWhere<Device>) {
     return this.deviceRepo.findOne({
       where,
-      relations: { company: true, currentUser: true },
+      relations: { company: true, currentUser: true, displayFor: true },
       order: { createdAt: 'DESC' },
     });
   }

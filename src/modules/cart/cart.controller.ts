@@ -26,8 +26,11 @@ import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { CartIdParam } from './dto/request/cart-param.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
+import { DeviceTypes } from 'src/common/decorators/device-types.decorator';
+import { DeviceTypeEnum } from '../device/entities/device.entity';
 
 @ApiTags('Carts')
+@DeviceTypes(DeviceTypeEnum.POS_TERMINAL)
 @RequirePermissions('sales.create')
 @Controller('carts')
 @UseGuards(AuthGuard, RolesGuard)

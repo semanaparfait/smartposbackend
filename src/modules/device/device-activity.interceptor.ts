@@ -10,6 +10,7 @@ import { from, Observable, switchMap } from 'rxjs';
 import { LoggerService } from 'src/common/logger/logger.service';
 import { Payload } from 'src/util/token.service';
 import { DeviceService } from './device.service';
+import { DEVICE_CHECKED } from 'src/common/guards/roles.guard';
 
 // Metadata key used by @ApiOperation (not exported from @nestjs/swagger's public entry point).
 const API_OPERATION_KEY = 'swagger/apiOperation';
@@ -39,7 +40,13 @@ export class DeviceActivityInterceptor implements NestInterceptor {
     const action = operation?.summary ?? `${request.method} ${path}`;
 
     // A device that was disabled, rejected or deleted cuts off its open sessions at
-    // once, instead of when their tokens expire.
+    // once, instead of when their tokens expire. RolesGuard already checks it for
+    // employees (in the same query as their account), saving a round trip.
+    if (request[DEVICE_CHECKED]) {
+      this.track(context, user, action, path);
+      return next.handle();
+    }
+
     return from(this.deviceService.assertUsable(user.deviceId)).pipe(
       switchMap(() => {
         this.track(context, user, action, path);

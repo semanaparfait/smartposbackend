@@ -1,9 +1,14 @@
 import { createHash } from 'crypto';
 import { DataSource } from 'typeorm';
 import { UserRole } from 'src/modules/user/entities/user.entity';
+import {
+  DeviceTypeEnum,
+  RegistrationStatusEnum,
+} from 'src/modules/device/entities/device.entity';
 import { effectivePermissions } from './permissions';
 
 export interface Account {
+  name: string;
   active: boolean;
   role: UserRole;
   companyId: string | null;
@@ -14,6 +19,12 @@ export interface Account {
   // Employees signed in on one device at a time: the session currently allowed
   // (null = any, e.g. before their next login or when multiple are allowed).
   sessionId: string | null;
+  // The device the session was opened on, when one was asked for (read in the
+  // same query so a request costs one round trip). null = device deleted.
+  device?: {
+    status: RegistrationStatusEnum;
+    type: DeviceTypeEnum;
+  } | null;
 }
 
 // Read live (not from the token), so deactivating a user or changing their role
@@ -21,8 +32,10 @@ export interface Account {
 export async function loadAccount(
   dataSource: DataSource,
   userId: string,
+  deviceId?: string,
 ): Promise<Account | null> {
   const rows: {
+    name: string;
     active: boolean;
     role: UserRole;
     company_id: string | null;
@@ -32,21 +45,32 @@ export async function loadAccount(
     removed: string[] | null;
     session_id: string | null;
     allow_multiple_devices: boolean;
+    device_status: RegistrationStatusEnum | null;
+    device_type: DeviceTypeEnum | null;
   }[] = await dataSource.query(
-    `SELECT u.active, u.role, u.company_id, u.session_id, u.allow_multiple_devices,
+    `SELECT u.name, u.active, u.role, u.company_id, u.session_id, u.allow_multiple_devices,
             r.id AS role_id, r.permissions,
-            e.extra_permissions AS extra, e.removed_permissions AS removed
+            e.extra_permissions AS extra, e.removed_permissions AS removed,
+            d.registration_status AS device_status, d.type AS device_type
        FROM users u
        LEFT JOIN employees e ON e.id = u.employee_id
        LEFT JOIN employee_roles r ON r.id = e.role_id
+       LEFT JOIN devices d ON d.id = $2
       WHERE u.id = $1`,
-    [userId],
+    [userId, deviceId ?? null],
   );
 
   const row = rows[0];
   if (!row) return null;
 
   return {
+    device:
+      deviceId === undefined
+        ? undefined
+        : row.device_status
+          ? { status: row.device_status, type: row.device_type! }
+          : null,
+    name: row.name,
     active: row.active,
     role: row.role,
     companyId: row.company_id,

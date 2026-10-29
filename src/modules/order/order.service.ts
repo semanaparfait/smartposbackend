@@ -162,7 +162,8 @@ export class OrderService {
     return this.getOrder(user, id, this.viewScope(user));
   }
 
-  // Changing an order is limited to the employee's own orders, whatever they can see.
+  // Changing an order is limited to the employee's own orders, whatever they can
+  // see (unless a wider `scope` is passed).
   async getOrder(
     user: Payload,
     id: string,
@@ -193,7 +194,9 @@ export class OrderService {
         'Use the complete endpoint to finish an order with its payments',
       );
 
-    const order = await this.getOrder(user, id);
+    // Anyone who can see the order may move it along (e.g. the kitchen marking a
+    // waiter's order READY); paying and cancelling stay with its own employee.
+    const order = await this.getOrder(user, id, this.viewScope(user));
 
     assertOpen(order);
 
@@ -256,6 +259,7 @@ export class OrderService {
 
     const completed = await this.getOrder(user, id);
     this.realtime.orderUpdated(completed);
+    this.realtime.orderPaid(user.deviceId, completed);
 
     return completed;
   }
@@ -267,7 +271,10 @@ export class OrderService {
 
     order.status = OrderStatusEnum.CANCELLED;
 
-    return this.saveAndNotify(order);
+    const cancelled = await this.saveAndNotify(order);
+    this.realtime.displayCleared(user.deviceId);
+
+    return cancelled;
   }
 
   private async saveAndNotify(order: Order) {

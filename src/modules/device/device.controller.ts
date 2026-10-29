@@ -29,6 +29,8 @@ import { Payload } from 'src/util/token.service';
 import { Public } from 'src/common/decorators/public.decorator';
 import { DeviceIdParam } from './dto/request/device-param.dto';
 import { RegistrationStatusEnum } from './entities/device.entity';
+import { UpdateDeviceTypeDto } from './dto/request/update-device-type.dto';
+import { UpdateDeviceMomoCodeDto } from './dto/request/update-device-momo-code.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 
 @ApiTags('Devices')
@@ -82,6 +84,40 @@ export class DeviceController {
       user.role,
       deviceId,
       dto.action,
+      dto.type,
+    );
+  }
+
+  @Patch(':deviceId/type')
+  @RequirePermissions('devices.manage')
+  @ApiOperation({
+    summary:
+      'Set what the device is used for (POS terminal, kitchen or customer display)',
+  })
+  setType(
+    @User() user: Payload,
+    @Param() { deviceId }: DeviceIdParam,
+    @Body() dto: UpdateDeviceTypeDto,
+  ) {
+    return this.service.setType(user.sub, user.role, deviceId, dto);
+  }
+
+  @Patch(':deviceId/momo-code')
+  @RequirePermissions('devices.manage')
+  @ApiOperation({
+    summary:
+      'Set the MoMo pay code customers pay to at this device (null removes it)',
+  })
+  setMomoCode(
+    @User() user: Payload,
+    @Param() { deviceId }: DeviceIdParam,
+    @Body() dto: UpdateDeviceMomoCodeDto,
+  ) {
+    return this.service.setMomoCode(
+      user.sub,
+      user.role,
+      deviceId,
+      dto.momoCode,
     );
   }
 

@@ -17,6 +17,7 @@ import { ProductService } from '../product/product.service';
 import { Cart, CartStatusEnum } from '../cart/entities/cart.entity';
 import { Product } from '../product/entities/product.entity';
 import { Payload } from 'src/util/token.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { companyWhere, ownRecordsWhere } from 'src/common/utils/company-scope';
 
 @Injectable()
@@ -29,19 +30,23 @@ export class ItemService {
     private readonly cartService: CartService,
 
     private readonly productService: ProductService,
+
+    private readonly realtime: RealtimeService,
   ) {}
 
   async addItemById(user: Payload, cartId: string, dto: AddCartItemByIdDto) {
-    const cart = await this.getActiveCart(user, cartId);
-
-    const product = await this.productService.getProduct({
-      id: dto.productId,
-      company: { id: cart.company.id },
-    });
+    // Both are scoped to the user's company, so they can load at the same time.
+    const [cart, product] = await Promise.all([
+      this.getActiveCart(user, cartId),
+      this.productService.getProduct({
+        id: dto.productId,
+        ...companyWhere(user),
+      }),
+    ]);
 
     await this.addToCart(cart, product, dto.quantity);
 
-    return this.cartService.getCartView(cart.id);
+    return this.showCart(user, cart.id);
   }
 
   async addItemByCode(
@@ -49,16 +54,17 @@ export class ItemService {
     cartId: string,
     dto: AddCartItemByCodeDto,
   ) {
-    const cart = await this.getActiveCart(user, cartId);
-
-    const product = await this.productService.getProduct({
-      barCode: dto.barCode,
-      company: { id: cart.company.id },
-    });
+    const [cart, product] = await Promise.all([
+      this.getActiveCart(user, cartId),
+      this.productService.getProduct({
+        barCode: dto.barCode,
+        ...companyWhere(user),
+      }),
+    ]);
 
     await this.addToCart(cart, product, 1);
 
-    return this.cartService.getCartView(cart.id);
+    return this.showCart(user, cart.id);
   }
 
   async updateItemQuantity(user: Payload, itemId: string, quantity: number) {
@@ -68,7 +74,7 @@ export class ItemService {
 
     await this.cartService.calculateCartTotal(item.cart.id);
 
-    return this.cartService.getCartView(item.cart.id);
+    return this.showCart(user, item.cart.id);
   }
 
   async removeItem(user: Payload, id: string) {
@@ -81,7 +87,14 @@ export class ItemService {
 
     await this.cartService.calculateCartTotal(cartId);
 
-    return this.cartService.getCartView(cartId);
+    return this.showCart(user, cartId);
+  }
+
+  // The cart as the till shows it, also pushed to the till's customer display.
+  private async showCart(user: Payload, cartId: string) {
+    const cart = await this.cartService.getCartView(cartId);
+    this.realtime.cartChanged(user.deviceId, cart);
+    return cart;
   }
 
   async updateItem(item: Item, manager?: EntityManager) {

@@ -119,14 +119,6 @@ export class CartService {
     return cart;
   }
 
-  async update(cart: Partial<Cart>) {
-    const existingCart = await this.cartRepo.preload(cart);
-
-    if (!existingCart) throw new NotFoundException('Cart not found');
-
-    return await this.cartRepo.save(existingCart);
-  }
-
   async checkout(actor: Payload, cartId: string) {
     const order = await this.dataSource.transaction(async (manager) => {
       const user = await this.userService.findOne({ id: actor.sub }, manager);
@@ -174,6 +166,7 @@ export class CartService {
     // the payment screen without fetching it again.
     const created = await this.orderService.getOrder(actor, order.id);
     this.realtime.orderCreated(created);
+    this.realtime.orderToPay(actor.deviceId, created);
 
     return created;
   }
@@ -186,16 +179,23 @@ export class CartService {
       ...ownRecordsWhere(user),
     });
 
-    return this.cartRepo.remove(cart);
+    const removed = await this.cartRepo.remove(cart);
+    this.realtime.displayCleared(user.deviceId);
+
+    return removed;
   }
 
+  // One statement instead of loading and re-saving the cart: this runs on every
+  // tap or scan. The total is derived from the items (whose changes are in the
+  // audit history), so it is not recorded separately.
   async calculateCartTotal(cartId: string) {
-    const cart = await this.getCart({ id: cartId });
-
-    const items = cart.items;
-
-    cart.totalAmount = items.reduce((sum, i) => sum + Number(i.totalPrice), 0);
-
-    await this.update(cart);
+    await this.dataSource.query(
+      `UPDATE carts
+          SET total_amount = (SELECT COALESCE(SUM(total_price), 0)
+                                FROM items WHERE cart_id = $1),
+              "updatedAt" = $2
+        WHERE id = $1`,
+      [cartId, new Date()],
+    );
   }
 }

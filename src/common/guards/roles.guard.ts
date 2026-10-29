@@ -5,12 +5,21 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { Reflector } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { ANY_EMPLOYEE_KEY } from '../decorators/any-employee.decorator';
+import { DEVICE_TYPES_KEY } from '../decorators/device-types.decorator';
+import {
+  DEVICE_TYPE_LABELS,
+  DeviceTypeEnum,
+  RegistrationStatusEnum,
+} from 'src/modules/device/entities/device.entity';
+
+// Set on the request once the session's device was found usable.
+export const DEVICE_CHECKED = 'deviceChecked';
 import { UserRole } from 'src/modules/user/entities/user.entity';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { hasPermission } from '../permissions/permissions';
@@ -56,13 +65,26 @@ export class RolesGuard implements CanActivate {
 
     // Read live on every request, so deactivating a worker or changing their role
     // takes effect immediately instead of when the token expires.
-    const account = await loadAccount(this.dataSource, user.sub);
+    const request = context.switchToHttp().getRequest<Request>();
+    const account = await loadAccount(this.dataSource, user.sub, user.deviceId);
 
     if (!account?.active)
       throw new UnauthorizedException('Your account has been deactivated');
 
     if (!isCurrentSession(account, user.sid))
       throw new UnauthorizedException(SIGNED_IN_ELSEWHERE);
+
+    if (account.device !== undefined) {
+      const status = account.device?.status;
+
+      if (status !== RegistrationStatusEnum.REGISTERED)
+        throw new UnauthorizedException(
+          `Device is ${status ? status.toLowerCase() : 'removed'}, please login again`,
+        );
+
+      // Checked here, so DeviceActivityInterceptor need not look again.
+      request[DEVICE_CHECKED] = true;
+    }
 
     user.permissions = account.permissions;
 
@@ -99,6 +121,21 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException(
         `Your role does not allow this (${missing.join(', ')})`,
       );
+
+    const deviceTypes = this.reflector.getAllAndOverride<DeviceTypeEnum[]>(
+      DEVICE_TYPES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    // Read live (with the account), so a device given another type changes at once.
+    const type = account.device?.type;
+
+    if (deviceTypes && type) {
+      if (!deviceTypes.includes(type))
+        throw new ForbiddenException(
+          `Not available on a ${DEVICE_TYPE_LABELS[type]}`,
+        );
+    }
 
     return true;
   }

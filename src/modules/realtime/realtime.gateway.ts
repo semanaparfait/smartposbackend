@@ -2,9 +2,12 @@ import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
+  ConnectedSocket,
+  MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
   OnGatewayInit,
+  SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
@@ -18,10 +21,14 @@ import {
 } from 'src/common/permissions/account';
 import { hasPermission } from 'src/common/permissions/permissions';
 import { UserRole } from '../user/entities/user.entity';
-import { RegistrationStatusEnum } from '../device/entities/device.entity';
+import {
+  DeviceTypeEnum,
+  RegistrationStatusEnum,
+} from '../device/entities/device.entity';
 import { deviceSecretMatches } from '../device/device-secret';
 import { Payload } from 'src/util/token.service';
 import { RealtimeEvent, Rooms } from './realtime.events';
+import { sanitizeDisplayCart } from './display-cart';
 
 // How often connected devices get their last_seen_at refreshed, so the REST
 // `online` flag (2 minute window) stays true while a socket is open.
@@ -32,6 +39,9 @@ interface SocketData {
   // signed in, identified by its device secret (e.g. waiting for approval).
   kind: 'user' | 'terminal';
   userId?: string;
+  // Read from the account, not sent by the till: shown as "Served by" on the
+  // paired customer display.
+  name?: string | null;
   // Device.id (not the hardware deviceId).
   deviceId?: string;
   // Token session id (user sockets).
@@ -41,6 +51,27 @@ interface SocketData {
 }
 
 type AppSocket = Socket<any, any, any, SocketData>;
+
+export interface TerminalRow {
+  id: string;
+  type: DeviceTypeEnum;
+  registrationStatus: RegistrationStatusEnum;
+  displayForId: string | null;
+}
+
+// A registered customer display also listens to the till it is paired with.
+function terminalRooms(device: TerminalRow) {
+  const rooms = [Rooms.device(device.id)];
+
+  if (
+    device.type === DeviceTypeEnum.CUSTOMER_DISPLAY &&
+    device.registrationStatus === RegistrationStatusEnum.REGISTERED &&
+    device.displayForId
+  )
+    rooms.push(Rooms.display(device.displayForId));
+
+  return rooms;
+}
 
 // Handshake (Socket.IO, namespace `/realtime`):
 //   signed-in app:  io(`${API_URL}/realtime`, { auth: { token: accessToken } })
@@ -100,8 +131,10 @@ export class RealtimeGateway
     await socket.join(data.rooms);
 
     if (data.kind === 'terminal') {
-      const status = await this.deviceStatus(data.deviceId!);
-      socket.emit(RealtimeEvent.DEVICE_STATUS, { status });
+      socket.emit(
+        RealtimeEvent.DEVICE_STATUS,
+        await this.deviceStatus(data.deviceId!),
+      );
     }
 
     if (data.deviceId) this.deviceConnected(data.deviceId, data.companyId);
@@ -190,6 +223,63 @@ export class RealtimeGateway
     });
   }
 
+  // A device's type, pairing or status changed: moves its terminal sockets in or
+  // out of the display room of the till it shows.
+  async syncTerminal(device: TerminalRow) {
+    if (!this.server) return;
+
+    const sockets = await this.server
+      .in(Rooms.device(device.id))
+      .fetchSockets();
+
+    for (const socket of sockets) {
+      if (socket.data.kind !== 'terminal') continue;
+
+      const rooms = terminalRooms(device);
+      for (const room of socket.data.rooms)
+        if (!rooms.includes(room)) socket.leave(room);
+      socket.join(rooms);
+      socket.data.rooms = rooms;
+    }
+  }
+
+  // A deleted device keeps its socket (it may register again) but stops showing
+  // any till.
+  async detachTerminal(deviceId: string) {
+    if (!this.server) return;
+
+    const sockets = await this.server.in(Rooms.device(deviceId)).fetchSockets();
+
+    for (const socket of sockets) {
+      if (socket.data.kind !== 'terminal') continue;
+
+      for (const room of socket.data.rooms)
+        if (room !== Rooms.device(deviceId)) socket.leave(room);
+      socket.data.rooms = [Rooms.device(deviceId)];
+    }
+  }
+
+  // ---------- from clients ----------
+
+  // The till shows what the cashier just tapped or scanned on its customer
+  // display right away, without waiting for the database. Only reaches displays
+  // paired with the device the sender is signed in on.
+  @SubscribeMessage(RealtimeEvent.DISPLAY_PREVIEW)
+  displayPreview(
+    @ConnectedSocket() socket: AppSocket,
+    @MessageBody() body: unknown,
+  ) {
+    const { kind, deviceId, name } = socket.data ?? {};
+    if (kind !== 'user' || !deviceId) return;
+
+    const cart = sanitizeDisplayCart((body as { cart?: unknown })?.cart);
+    if (!cart) return;
+
+    socket
+      .to(Rooms.display(deviceId))
+      .emit(RealtimeEvent.DISPLAY_PREVIEW, { cart, cashier: name ?? null });
+  }
+
   // ---------- handshake ----------
 
   private async authenticate(socket: AppSocket): Promise<SocketData> {
@@ -235,17 +325,21 @@ export class RealtimeGateway
       throw new Error(SIGNED_IN_ELSEWHERE);
 
     if (payload.deviceId) {
-      const status = await this.deviceStatus(payload.deviceId);
+      const { status, type } = await this.deviceStatus(payload.deviceId);
 
       if (status !== RegistrationStatusEnum.REGISTERED)
         throw new Error(
           `Device is ${status?.toLowerCase() ?? 'removed'}, please login again`,
         );
+
+      if (type === DeviceTypeEnum.CUSTOMER_DISPLAY)
+        throw new Error('This device is now a customer display');
     }
 
     return {
       kind: 'user',
       userId: payload.sub,
+      name: account.name,
       deviceId: payload.deviceId,
       sid: payload.sid,
       companyId: account.companyId,
@@ -257,12 +351,14 @@ export class RealtimeGateway
     hardwareId: string,
     secret: string,
   ): Promise<SocketData> {
-    const rows: {
-      id: string;
+    const rows: (TerminalRow & {
       company_id: string | null;
       secret_hash: string | null;
-    }[] = await this.dataSource.query(
-      `SELECT id, company_id, secret_hash FROM devices WHERE device_id = $1`,
+    })[] = await this.dataSource.query(
+      `SELECT id, company_id, secret_hash, type,
+              registration_status AS "registrationStatus",
+              display_for_id AS "displayForId"
+         FROM devices WHERE device_id = $1`,
       [hardwareId],
     );
 
@@ -275,7 +371,7 @@ export class RealtimeGateway
       kind: 'terminal',
       deviceId: device.id,
       companyId: device.company_id,
-      rooms: [Rooms.device(device.id)],
+      rooms: terminalRooms(device),
     };
   }
 
@@ -352,13 +448,28 @@ export class RealtimeGateway
     }
   }
 
+  // Same shape as RealtimeService.deviceStatus.
   private async deviceStatus(deviceId: string) {
-    const rows: { registration_status: RegistrationStatusEnum }[] =
-      await this.dataSource.query(
-        `SELECT registration_status FROM devices WHERE id = $1`,
-        [deviceId],
-      );
+    const rows: {
+      registration_status: RegistrationStatusEnum;
+      type: DeviceTypeEnum;
+      display_for_id: string | null;
+      momo_code: string | null;
+    }[] = await this.dataSource.query(
+      `SELECT d.registration_status, d.type, d.display_for_id,
+              COALESCE(d.momo_code, t.momo_code) AS momo_code
+         FROM devices d
+         LEFT JOIN devices t ON t.id = d.display_for_id
+        WHERE d.id = $1`,
+      [deviceId],
+    );
 
-    return rows[0]?.registration_status ?? null;
+    const row = rows[0];
+    return {
+      status: row?.registration_status ?? null,
+      type: row?.type ?? null,
+      displayForId: row?.display_for_id ?? null,
+      momoCode: row?.momo_code ?? null,
+    };
   }
 }
