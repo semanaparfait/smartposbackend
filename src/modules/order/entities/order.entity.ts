@@ -16,6 +16,8 @@ export enum OrderStatusEnum {
   PENDING = 'PENDING',
   PREPARING = 'PREPARING',
   READY = 'READY',
+  // Taken to the customer. Payment can still follow.
+  SERVED = 'SERVED',
   COMPLETED = 'COMPLETED',
   CANCELLED = 'CANCELLED',
 }

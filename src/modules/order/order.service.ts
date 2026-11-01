@@ -212,17 +212,49 @@ export class OrderService {
         'Use the complete endpoint to finish an order with its payments',
       );
 
+    if (status === OrderStatusEnum.SERVED)
+      throw new BadRequestException(
+        'Use the served endpoint once a ready order was taken to the customer',
+      );
+
     // Anyone who can see the order may move it along (e.g. the kitchen marking a
     // waiter's order READY); paying and cancelling stay with its own employee.
     const order = await this.getOrder(user, id, this.viewScope(user));
 
     assertOpen(order);
 
+    if (order.status === OrderStatusEnum.SERVED)
+      throw new BadRequestException('Order is already served');
+
+    const becameReady =
+      status === OrderStatusEnum.READY &&
+      order.status !== OrderStatusEnum.READY;
+
     order.status = status;
 
     const saved = await this.saveAndNotify(order);
 
+    if (becameReady) await this.realtime.orderReady(saved);
+
     return this.onKitchenDisplay(user) ? (kitchenOrder(saved) ?? saved) : saved;
+  }
+
+  // Stops the ready alert. Not limited to the worker's own orders: when they are
+  // away, whoever was alerted takes the food out. Pressing it twice is harmless.
+  async markServed(user: Payload, id: string) {
+    const order = await this.getOrder(user, id, {});
+
+    if (order.status === OrderStatusEnum.SERVED) return order;
+
+    if (order.status !== OrderStatusEnum.READY)
+      throw new BadRequestException('Only a ready order can be served');
+
+    order.status = OrderStatusEnum.SERVED;
+
+    const saved = await this.saveAndNotify(order);
+    this.realtime.orderServed(saved, user);
+
+    return saved;
   }
 
   async completeOrder(user: Payload, id: string, dto: CompleteOrderDto) {

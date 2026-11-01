@@ -93,6 +93,17 @@ export class OrderController {
     return this.service.changeStatus(user, orderId, dto.status);
   }
 
+  @Patch(':orderId/served')
+  @DeviceTypes(DeviceTypeEnum.POS_TERMINAL)
+  @RequirePermissions('sales.create')
+  @Roles(UserRole.EMPLOYEE, UserRole.OWNER)
+  @ApiOperation({
+    summary: 'Mark a ready order as taken to the customer (stops the alert)',
+  })
+  markServed(@User() user: Payload, @Param() { orderId }: OrderIdParam) {
+    return this.service.markServed(user, orderId);
+  }
+
   @Patch(':orderId/complete')
   @DeviceTypes(DeviceTypeEnum.POS_TERMINAL)
   @RequirePermissions('sales.checkout')

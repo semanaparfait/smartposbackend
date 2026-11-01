@@ -12,6 +12,7 @@ import { Item } from '../item/entities/item.entity';
 import { RealtimeGateway } from './realtime.gateway';
 import { RealtimeEvent, Rooms } from './realtime.events';
 import { DisplayCart } from './display-cart';
+import { Payload } from 'src/util/token.service';
 import { kitchenOrder } from '../order/kitchen-order';
 import { LowStockProduct } from '../product/stock.service';
 
@@ -32,6 +33,36 @@ export class RealtimeService {
 
   orderUpdated(order: Order) {
     this.emitOrder(RealtimeEvent.ORDER_UPDATED, order);
+  }
+
+  // The food is ready: tells whoever took the order, or everyone at the company
+  // if they aren't connected, so it is never left waiting unnoticed.
+  async orderReady(order: Order) {
+    const waiterId = order.user?.id;
+
+    if (waiterId && (await this.gateway.isConnected(waiterId)))
+      return this.gateway.emit(
+        Rooms.user(waiterId),
+        RealtimeEvent.ORDER_READY,
+        {
+          order,
+          wholeCompany: false,
+        },
+      );
+
+    if (order.company?.id)
+      this.gateway.emitToStaff(order.company.id, RealtimeEvent.ORDER_READY, {
+        order,
+        wholeCompany: true,
+      });
+  }
+
+  orderServed(order: Order, by: Payload) {
+    if (order.company?.id)
+      this.gateway.emitToStaff(order.company.id, RealtimeEvent.ORDER_SERVED, {
+        orderId: order.id,
+        servedBy: { id: by.sub, name: by.name ?? null },
+      });
   }
 
   // Tells the device itself (e.g. a customer display after its till's MoMo code

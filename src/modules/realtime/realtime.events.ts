@@ -7,6 +7,15 @@ export const RealtimeEvent = {
   ORDER_CREATED: 'order.created',
   ORDER_UPDATED: 'order.updated',
 
+  // The kitchen finished an order: { order, wholeCompany }. Goes to the worker who
+  // took it, or to everyone signed in at the company (except kitchen displays)
+  // when that worker is offline (wholeCompany: true). The app keeps sounding until
+  // someone calls PATCH /orders/:id/served.
+  ORDER_READY: 'order.ready',
+  // Stops that sound everywhere: { orderId, servedBy: { id, name } }. To everyone
+  // signed in at the company except kitchen displays.
+  ORDER_SERVED: 'order.served',
+
   // Devices, for owners / devices.manage / super admins.
   // device.requested + device.updated: { device }; device.removed: { id }.
   DEVICE_REQUESTED: 'device.requested',

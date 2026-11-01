@@ -160,6 +160,23 @@ export class RealtimeGateway
     this.server.to(rooms).emit(event, payload);
   }
 
+  // Everyone signed in at the company, except kitchen displays.
+  emitToStaff(companyId: string, event: string, payload: unknown) {
+    if (!this.server) return;
+
+    this.server
+      .to(Rooms.company(companyId))
+      .except(Rooms.kitchen(companyId))
+      .emit(event, payload);
+  }
+
+  // Whether the user has the app open right now.
+  async isConnected(userId: string) {
+    if (!this.server) return false;
+
+    return (await this.server.in(Rooms.user(userId)).fetchSockets()).length > 0;
+  }
+
   // Tells the user why, then closes every socket they have open.
   revokeUser(userId: string, reason: string) {
     if (!this.server) return;
