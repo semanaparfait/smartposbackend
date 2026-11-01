@@ -27,6 +27,9 @@ import {
   hasPermission,
   requirePermission,
 } from 'src/common/permissions/permissions';
+import { StockService } from '../product/stock.service';
+import { DeviceTypeEnum } from '../device/entities/device.entity';
+import { kitchenOrder } from './kitchen-order';
 
 const toCents = (amount: number) => Math.round(Number(amount) * 100);
 
@@ -49,6 +52,8 @@ export class OrderService {
     private readonly dataSource: DataSource,
 
     private readonly realtime: RealtimeService,
+
+    private readonly stock: StockService,
   ) {}
 
   async createOrder(dto: CreateOrderDto, repo: EntityManager) {
@@ -67,8 +72,9 @@ export class OrderService {
 
   // Employees see their own orders, owners their company's, super admin everything.
   // With orders.view_all an employee sees the whole company's orders.
+  // A kitchen display only gets what the kitchen makes.
   async getOrders(user: Payload, companyId?: string) {
-    return this.orderRepo.find({
+    const orders = await this.orderRepo.find({
       where: { ...companyWhere(user, companyId), ...this.viewScope(user) },
       relations: {
         items: { product: { images: true } },
@@ -80,6 +86,10 @@ export class OrderService {
         createdAt: 'DESC',
       },
     });
+
+    if (!this.onKitchenDisplay(user)) return orders;
+
+    return orders.flatMap((order) => kitchenOrder(order) ?? []);
   }
 
   // Each employee's totals per month of `year`, for the owner's employee-of-the-month
@@ -159,7 +169,15 @@ export class OrderService {
   }
 
   async viewOrder(user: Payload, id: string) {
-    return this.getOrder(user, id, this.viewScope(user));
+    const order = await this.getOrder(user, id, this.viewScope(user));
+
+    if (!this.onKitchenDisplay(user)) return order;
+
+    const kitchen = kitchenOrder(order);
+
+    if (!kitchen) throw new NotFoundException('Order not found');
+
+    return kitchen;
   }
 
   // Changing an order is limited to the employee's own orders, whatever they can
@@ -202,7 +220,9 @@ export class OrderService {
 
     order.status = status;
 
-    return this.saveAndNotify(order);
+    const saved = await this.saveAndNotify(order);
+
+    return this.onKitchenDisplay(user) ? (kitchenOrder(saved) ?? saved) : saved;
   }
 
   async completeOrder(user: Payload, id: string, dto: CompleteOrderDto) {
@@ -221,7 +241,7 @@ export class OrderService {
         `Payments add up to ${paid / 100} but the order total is ${Number(order.total)}`,
       );
 
-    await this.dataSource.transaction(async (manager) => {
+    const lowStock = await this.dataSource.transaction(async (manager) => {
       // Lock the order so two simultaneous completions can't both record payments.
       const locked = await manager.findOne(Order, {
         where: { id: order.id },
@@ -255,11 +275,15 @@ export class OrderService {
       locked!.status = OrderStatusEnum.COMPLETED;
       locked!.company = order.company;
       await manager.save(Order, locked!);
+
+      // Here rather than at checkout, so an abandoned order never touches stock.
+      return this.stock.recordSale(manager, order, user.sub);
     });
 
     const completed = await this.getOrder(user, id);
     this.realtime.orderUpdated(completed);
     this.realtime.orderPaid(user.deviceId, completed);
+    this.realtime.stockLow(order.company.id, lowStock);
 
     return completed;
   }
@@ -281,6 +305,10 @@ export class OrderService {
     const saved = await this.orderRepo.save(order);
     this.realtime.orderUpdated(saved);
     return saved;
+  }
+
+  private onKitchenDisplay(user: Payload) {
+    return user.deviceType === DeviceTypeEnum.KITCHEN_DISPLAY;
   }
 
   private viewScope(user: Payload): FindOptionsWhere<Order> {

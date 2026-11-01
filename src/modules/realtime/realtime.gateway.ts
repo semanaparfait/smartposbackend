@@ -21,6 +21,7 @@ import {
 } from 'src/common/permissions/account';
 import { hasPermission } from 'src/common/permissions/permissions';
 import { UserRole } from '../user/entities/user.entity';
+import { File } from '../file/entities/file.entity';
 import {
   DeviceTypeEnum,
   RegistrationStatusEnum,
@@ -42,8 +43,12 @@ interface SocketData {
   // Read from the account, not sent by the till: shown as "Served by" on the
   // paired customer display.
   name?: string | null;
+  // Their picture, read when a till connects, shown next to that name.
+  picture?: string | null;
   // Device.id (not the hardware deviceId).
   deviceId?: string;
+  // The type of that device (user sockets).
+  deviceType?: DeviceTypeEnum | null;
   // Token session id (user sockets).
   sid?: string;
   companyId: string | null;
@@ -210,7 +215,12 @@ export class RealtimeGateway
       return this.revokeUser(userId, 'Your account has been deactivated');
 
     for (const socket of sockets) {
-      const rooms = this.roomsFor(userId, account, socket.data.deviceId);
+      const rooms = this.roomsFor(
+        userId,
+        account,
+        socket.data.deviceId,
+        socket.data.deviceType,
+      );
 
       for (const room of socket.data.rooms)
         if (!rooms.includes(room)) socket.leave(room);
@@ -224,7 +234,8 @@ export class RealtimeGateway
   }
 
   // A device's type, pairing or status changed: moves its terminal sockets in or
-  // out of the display room of the till it shows.
+  // out of the display room of the till it shows, and whoever is signed in on it
+  // in or out of the kitchen room.
   async syncTerminal(device: TerminalRow) {
     if (!this.server) return;
 
@@ -232,8 +243,16 @@ export class RealtimeGateway
       .in(Rooms.device(device.id))
       .fetchSockets();
 
+    const retyped = new Set<string>();
+
     for (const socket of sockets) {
-      if (socket.data.kind !== 'terminal') continue;
+      if (socket.data.kind !== 'terminal') {
+        if (socket.data.deviceType !== device.type) {
+          socket.data.deviceType = device.type;
+          retyped.add(socket.data.userId);
+        }
+        continue;
+      }
 
       const rooms = terminalRooms(device);
       for (const room of socket.data.rooms)
@@ -241,6 +260,8 @@ export class RealtimeGateway
       socket.join(rooms);
       socket.data.rooms = rooms;
     }
+
+    await Promise.all([...retyped].map((id) => this.refreshUser(id)));
   }
 
   // A deleted device keeps its socket (it may register again) but stops showing
@@ -269,15 +290,17 @@ export class RealtimeGateway
     @ConnectedSocket() socket: AppSocket,
     @MessageBody() body: unknown,
   ) {
-    const { kind, deviceId, name } = socket.data ?? {};
+    const { kind, deviceId, name, picture } = socket.data ?? {};
     if (kind !== 'user' || !deviceId) return;
 
     const cart = sanitizeDisplayCart((body as { cart?: unknown })?.cart);
     if (!cart) return;
 
-    socket
-      .to(Rooms.display(deviceId))
-      .emit(RealtimeEvent.DISPLAY_PREVIEW, { cart, cashier: name ?? null });
+    socket.to(Rooms.display(deviceId)).emit(RealtimeEvent.DISPLAY_PREVIEW, {
+      cart,
+      cashier: name ?? null,
+      cashierImage: picture ?? null,
+    });
   }
 
   // ---------- handshake ----------
@@ -324,8 +347,11 @@ export class RealtimeGateway
     if (!isCurrentSession(account, payload.sid))
       throw new Error(SIGNED_IN_ELSEWHERE);
 
+    let deviceType: DeviceTypeEnum | null | undefined;
+
     if (payload.deviceId) {
       const { status, type } = await this.deviceStatus(payload.deviceId);
+      deviceType = type;
 
       if (status !== RegistrationStatusEnum.REGISTERED)
         throw new Error(
@@ -340,11 +366,22 @@ export class RealtimeGateway
       kind: 'user',
       userId: payload.sub,
       name: account.name,
+      picture: payload.deviceId ? await this.pictureOf(payload.sub) : null,
       deviceId: payload.deviceId,
+      deviceType,
       sid: payload.sid,
       companyId: account.companyId,
-      rooms: this.roomsFor(payload.sub, account, payload.deviceId),
+      rooms: this.roomsFor(payload.sub, account, payload.deviceId, deviceType),
     };
+  }
+
+  // An employee's picture is on their employee record, an owner's is their avatar.
+  private async pictureOf(userId: string) {
+    const file = await this.dataSource.getRepository(File).findOne({
+      where: [{ employee: { user: { id: userId } } }, { user: { id: userId } }],
+    });
+
+    return file?.thumbnailUrl ?? null;
   }
 
   private async authenticateTerminal(
@@ -375,7 +412,12 @@ export class RealtimeGateway
     };
   }
 
-  private roomsFor(userId: string, account: Account, deviceId?: string) {
+  private roomsFor(
+    userId: string,
+    account: Account,
+    deviceId?: string,
+    deviceType?: DeviceTypeEnum | null,
+  ) {
     const rooms = [Rooms.user(userId)];
     const user = { role: account.role, permissions: account.permissions };
     const can = (key: string) => hasPermission(user as Payload, key);
@@ -384,8 +426,12 @@ export class RealtimeGateway
 
     if (account.companyId) {
       rooms.push(Rooms.company(account.companyId));
-      if (can('orders.view_all')) rooms.push(Rooms.orders(account.companyId));
+      if (deviceType === DeviceTypeEnum.KITCHEN_DISPLAY)
+        rooms.push(Rooms.kitchen(account.companyId));
+      else if (can('orders.view_all'))
+        rooms.push(Rooms.orders(account.companyId));
       if (can('devices.manage')) rooms.push(Rooms.devices(account.companyId));
+      if (can('inventory.view')) rooms.push(Rooms.inventory(account.companyId));
     }
 
     if (deviceId) rooms.push(Rooms.device(deviceId));

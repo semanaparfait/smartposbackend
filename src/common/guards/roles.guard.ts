@@ -87,6 +87,7 @@ export class RolesGuard implements CanActivate {
     }
 
     user.permissions = account.permissions;
+    user.deviceType = account.device?.type;
 
     // Changes whenever the role's permissions change; the app refetches /auth/me
     // when it sees a different value, so new access shows up without a re-login.

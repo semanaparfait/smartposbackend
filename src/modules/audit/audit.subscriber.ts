@@ -11,7 +11,11 @@ import { RequestContext } from 'src/common/context/request-context';
 import { AuditAction, AuditLog } from './entities/audit-log.entity';
 
 // Tables that are themselves logs (or high-frequency tracking) and must not be audited.
-const SKIPPED_TABLES = new Set(['audit_logs', 'device_activities']);
+const SKIPPED_TABLES = new Set([
+  'audit_logs',
+  'device_activities',
+  'stock_movements',
+]);
 
 // Never write these values into the history.
 const SECRET_FIELDS = new Set(['password', 'pin', 'secretHash']);

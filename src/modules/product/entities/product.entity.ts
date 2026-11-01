@@ -16,6 +16,7 @@ import { File } from 'src/modules/file/entities/file.entity';
 @Entity('products')
 @Unique('UQ_PRODUCT_COMPANY_NAME', ['company', 'name'])
 @Unique('UQ_PRODUCT_COMPANY_BARCODE', ['company', 'barCode'])
+@Unique('UQ_PRODUCT_COMPANY_SKU', ['company', 'sku'])
 export class Product extends BaseEntity {
   @Index('IDX_products_company')
   @ManyToOne(() => Company, (company) => company.products, {
@@ -46,14 +47,57 @@ export class Product extends BaseEntity {
   @Column({ name: 'selling_price', type: 'decimal', scale: 2 })
   sellingPrice!: number;
 
-  @Column({ name: 'bar_code', nullable: true })
-  barCode!: string;
+  @Column({ name: 'bar_code', type: 'varchar', nullable: true })
+  barCode!: string | null;
 
   @Column({ type: 'text', nullable: true })
   ingredients!: string;
 
   @Column({ default: true })
   active!: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  description!: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  sku!: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  supplier!: string | null;
+
+  // Free text (see the app's unit list); a shop may type its own.
+  @Column({ type: 'varchar', length: 20, default: 'Piece' })
+  unit!: string;
+
+  // Off by default: the product sells without any stock being counted.
+  @Column({ name: 'track_stock', default: false })
+  trackStock!: boolean;
+
+  // Decimal so amounts like 1.5 kg fit. Only changed through StockService, so
+  // every change has a stock movement; a sale can take it below zero.
+  @Column({
+    name: 'stock_quantity',
+    type: 'decimal',
+    precision: 12,
+    scale: 3,
+    default: 0,
+  })
+  stockQuantity!: number;
+
+  @Column({
+    name: 'low_stock_level',
+    type: 'decimal',
+    precision: 12,
+    scale: 3,
+    nullable: true,
+  })
+  lowStockLevel!: number | null;
+
+  @Column({ name: 'expiry_date', type: 'date', nullable: true })
+  expiryDate!: string | null;
+
+  @Column({ name: 'send_to_kitchen', default: false })
+  sendToKitchen!: boolean;
 
   @OneToMany(() => Item, (item) => item.product)
   items!: Item[];

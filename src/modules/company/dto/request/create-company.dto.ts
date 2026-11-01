@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { CompanyType } from '../../entities/company.entity';
 
 export class CreateCompanyDto {
@@ -23,6 +23,12 @@ export class CreateCompanyDto {
   @ApiProperty()
   @IsString()
   location!: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  tin?: string;
 
   @ApiProperty({ enum: CompanyType })
   @IsEnum(CompanyType)

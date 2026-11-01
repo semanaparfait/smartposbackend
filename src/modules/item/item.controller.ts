@@ -14,6 +14,7 @@ import {
   AddCartItemByIdDto,
 } from './dto/request/add-cart-item.dto';
 import { UpdateCartItemDto } from './dto/request/update-cart-item.dto';
+import { UpdateCartItemNoteDto } from './dto/request/update-cart-item-note.dto';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from '../user/entities/user.entity';
@@ -73,6 +74,18 @@ export class ItemController {
     );
 
     return { message: 'Item updated', cart };
+  }
+
+  @Patch(':itemId/note')
+  @ApiOperation({ summary: 'Set the note the kitchen sees on this item' })
+  async updateItemNote(
+    @User() user: Payload,
+    @Param() { itemId }: ItemIdParam,
+    @Body() dto: UpdateCartItemNoteDto,
+  ) {
+    const cart = await this.service.updateItemNote(user, itemId, dto.note);
+
+    return { message: 'Note saved', cart };
   }
 
   @Delete(':itemId/delete')

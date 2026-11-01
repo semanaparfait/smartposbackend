@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { DeviceTypeEnum } from 'src/modules/device/entities/device.entity';
 import { UserRole } from 'src/modules/user/entities/user.entity';
 
 export class Payload {
@@ -16,6 +17,9 @@ export class Payload {
   // Not in the token: loaded per request by RolesGuard for employees, from their
   // role's current permissions (null = role allows everything).
   permissions?: string[] | null;
+  // Not in the token: the session device's current type, set by RolesGuard for
+  // employees.
+  deviceType?: DeviceTypeEnum;
 }
 
 @Injectable()

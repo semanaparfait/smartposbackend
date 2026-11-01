@@ -17,6 +17,10 @@ export class Item extends BaseEntity {
   @Column({ name: 'total_price', type: 'decimal', scale: 2 })
   totalPrice!: number;
 
+  // For the kitchen, e.g. "No onions".
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  note!: string | null;
+
   @Index('IDX_items_cart')
   @ManyToOne(() => Cart, (cart) => cart.items, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'cart_id' })

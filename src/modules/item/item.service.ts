@@ -77,6 +77,15 @@ export class ItemService {
     return this.showCart(user, item.cart.id);
   }
 
+  async updateItemNote(user: Payload, itemId: string, note?: string | null) {
+    const item = await this.getActiveItem(user, itemId);
+
+    item.note = note ?? null;
+    await this.itemRepo.save(item);
+
+    return this.showCart(user, item.cart.id);
+  }
+
   async removeItem(user: Payload, id: string) {
     const item = await this.getActiveItem(user, id);
 

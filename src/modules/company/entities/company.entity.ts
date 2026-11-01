@@ -40,6 +40,10 @@ export class Company extends BaseEntity {
   @Column()
   location!: string;
 
+  // Tax number, printed on receipts.
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  tin!: string | null;
+
   @Column({ type: 'enum', enum: CompanyType })
   type!: CompanyType;
 

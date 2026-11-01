@@ -12,6 +12,8 @@ import { Item } from '../item/entities/item.entity';
 import { RealtimeGateway } from './realtime.gateway';
 import { RealtimeEvent, Rooms } from './realtime.events';
 import { DisplayCart } from './display-cart';
+import { kitchenOrder } from '../order/kitchen-order';
+import { LowStockProduct } from '../product/stock.service';
 
 // What the rest of the app calls to push changes to connected clients. Call it
 // after the change is saved (outside transactions), so clients that refetch on
@@ -124,6 +126,15 @@ export class RealtimeService {
     return rows.map((r) => r.id);
   }
 
+  stockLow(companyId: string, products: LowStockProduct[]) {
+    if (products.length)
+      this.gateway.emit(
+        [Rooms.inventory(companyId), Rooms.admin],
+        RealtimeEvent.STOCK_LOW,
+        { products },
+      );
+  }
+
   // ---------- customer displays ----------
   // `tillId` is the device (Device.id) of whoever made the change.
 
@@ -179,6 +190,11 @@ export class RealtimeService {
     if (order.user?.id) rooms.push(Rooms.user(order.user.id));
 
     this.gateway.emit(rooms, event, order);
+
+    const kitchen = order.company?.id && kitchenOrder(order);
+
+    if (kitchen)
+      this.gateway.emit(Rooms.kitchen(order.company.id), event, kitchen);
   }
 
   private deviceManagers(companyId?: string | null) {

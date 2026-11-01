@@ -4,16 +4,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, Repository } from 'typeorm';
+import { EntityManager, FindOptionsWhere, Not, Repository } from 'typeorm';
 import { ProductCategory } from './entities/product-category.entity';
 import { Product } from './entities/product.entity';
 import { CreateProductCategoryDto } from './dto/request/create-product-category.dto';
 import { UpdateProductCategoryDto } from './dto/request/update-product-category.dto';
 import { CreateProductDto } from './dto/request/create-product.dto';
 import { UpdateProductDto } from './dto/request/update-product.dto';
+import { RestockProductDto } from './dto/request/restock-product.dto';
+import { StockMovementReasonEnum } from './entities/stock-movement.entity';
+import { StockService } from './stock.service';
 import { FileService } from '../file/file.service';
 import { Payload } from 'src/util/token.service';
 import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
+import { requirePermission } from 'src/common/permissions/permissions';
 
 @Injectable()
 export class ProductService {
@@ -25,6 +29,8 @@ export class ProductService {
     private productRepo: Repository<Product>,
 
     private fileService: FileService,
+
+    private stockService: StockService,
   ) {}
 
   // ---------------- CATEGORY ----------------
@@ -109,18 +115,29 @@ export class ProductService {
     picture: Express.Multer.File,
   ) {
     const companyId = targetCompanyId(user, dto.companyId);
-    const { companyId: _companyId, categoryId, ...fields } = dto;
+    const { companyId: _companyId, categoryId, stockQuantity, ...fields } = dto;
+
+    if (stockQuantity) requirePermission(user, 'inventory.adjust');
 
     if (categoryId) await this.getCompanyCategory(categoryId, companyId);
 
+    await this.assertCodesFree(companyId, dto);
+
     const product = await this.fileService.createWithImage(picture, () =>
-      this.productRepo.save(
-        this.productRepo.create({
-          ...fields,
-          company: { id: companyId },
-          ...(categoryId ? { category: { id: categoryId } } : {}),
-        }),
-      ),
+      this.productRepo.manager.transaction(async (manager) => {
+        const created = await manager.save(
+          manager.create(Product, {
+            ...fields,
+            company: { id: companyId },
+            ...(categoryId ? { category: { id: categoryId } } : {}),
+          }),
+        );
+
+        if (stockQuantity)
+          await this.countStock(manager, user, created.id, stockQuantity, 0);
+
+        return created;
+      }),
     );
 
     return await this.getProduct({ id: product.id });
@@ -156,7 +173,14 @@ export class ProductService {
     picture?: Express.Multer.File,
   ) {
     const product = await this.getProduct({ id, ...companyWhere(user) });
-    const { categoryId, picture: _picture, ...fields } = dto;
+    const { categoryId, picture: _picture, stockQuantity, ...fields } = dto;
+    const stockChanged =
+      stockQuantity !== undefined &&
+      stockQuantity !== Number(product.stockQuantity);
+
+    if (stockChanged) requirePermission(user, 'inventory.adjust');
+
+    await this.assertCodesFree(product.company.id, dto, id);
 
     Object.assign(product, fields);
 
@@ -167,9 +191,26 @@ export class ProductService {
       );
     }
 
-    // Saved without the loaded images so TypeORM doesn't touch the files table.
-    const { images: _images, ...changes } = product;
-    await this.productRepo.save(changes);
+    // Saved without the loaded images so TypeORM doesn't touch the files table, and
+    // without the stock so a sale happening now isn't overwritten.
+    const {
+      images: _images,
+      stockQuantity: currentStock,
+      ...changes
+    } = product;
+
+    await this.productRepo.manager.transaction(async (manager) => {
+      await manager.save(Product, changes);
+
+      if (stockChanged)
+        await this.countStock(
+          manager,
+          user,
+          id,
+          stockQuantity,
+          Number(currentStock),
+        );
+    });
 
     if (picture) await this.fileService.replaceImage(picture, product);
 
@@ -192,7 +233,69 @@ export class ProductService {
     return this.productRepo.save(product);
   }
 
+  // Stock arriving, e.g. a delivery.
+  async restock(user: Payload, id: string, dto: RestockProductDto) {
+    await this.getProduct({ id, ...companyWhere(user) });
+
+    await this.productRepo.manager.transaction((manager) =>
+      this.stockService.apply(manager, {
+        productId: id,
+        change: dto.quantity,
+        reason: StockMovementReasonEnum.RESTOCK,
+        userId: user.sub,
+        note: dto.note,
+      }),
+    );
+
+    return this.getProduct({ id });
+  }
+
+  async getStockMovements(
+    user: Payload,
+    id: string,
+    page?: number,
+    limit?: number,
+  ) {
+    await this.getProduct({ id, ...companyWhere(user) });
+
+    return this.stockService.getMovements(id, page, limit);
+  }
+
   // helpers
+
+  // A counted figure replaces the old one: recorded as the difference.
+  private countStock(
+    manager: EntityManager,
+    user: Payload,
+    productId: string,
+    counted: number,
+    current: number,
+  ) {
+    return this.stockService.apply(manager, {
+      productId,
+      change: counted - current,
+      reason: StockMovementReasonEnum.ADJUSTMENT,
+      userId: user.sub,
+    });
+  }
+
+  // The database also refuses duplicates; this says which one.
+  private async assertCodesFree(
+    companyId: string,
+    { barCode, sku }: { barCode?: string | null; sku?: string | null },
+    exceptId?: string,
+  ) {
+    const scope = {
+      company: { id: companyId },
+      ...(exceptId ? { id: Not(exceptId) } : {}),
+    };
+
+    if (barCode && (await this.productRepo.existsBy({ ...scope, barCode })))
+      throw new ConflictException('Another product already has this barcode');
+
+    if (sku && (await this.productRepo.existsBy({ ...scope, sku })))
+      throw new ConflictException('Another product already has this SKU');
+  }
 
   // A product may only be filed under a category of its own company.
   private async getCompanyCategory(categoryId: string, companyId: string) {

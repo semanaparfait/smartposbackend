@@ -37,6 +37,10 @@ export const RealtimeEvent = {
   // display.cleared: {} when the cart is dropped or the order cancelled.
   DISPLAY_CLEARED: 'display.cleared',
 
+  // To owners, inventory.view and super admins, when a sale takes products to
+  // their alert level: { products: [{ id, name, unit, stockQuantity, lowStockLevel }] }.
+  STOCK_LOW: 'stock.low',
+
   // To the signed-in user: { permissions, version } after their role changed.
   PERMISSIONS_CHANGED: 'permissions.changed',
   // To the signed-in user: { reason } right before the server closes the
@@ -52,6 +56,11 @@ export const Rooms = {
   orders: (companyId: string) => `orders:${companyId}`,
   // Owners and employees with devices.manage.
   devices: (companyId: string) => `devices:${companyId}`,
+  // Sockets on kitchen displays. They get order events from here instead of
+  // `orders`, with only the items the kitchen makes.
+  kitchen: (companyId: string) => `kitchen:${companyId}`,
+  // Owners and employees with inventory.view.
+  inventory: (companyId: string) => `inventory:${companyId}`,
   // Customer displays paired with the till (Device.id).
   display: (tillId: string) => `display:${tillId}`,
   admin: 'admin',
