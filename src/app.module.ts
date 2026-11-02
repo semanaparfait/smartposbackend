@@ -26,6 +26,7 @@ import { FileModule } from './modules/file/file.module';
 import cloudinaryConfig from './config/cloudinary.config';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { ServiceModule } from './modules/service/service.module';
+import { ExpenseModule } from './modules/expense/expense.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { ServiceModule } from './modules/service/service.module';
     ItemModule,
     OrderModule,
     ServiceModule,
+    ExpenseModule,
     FileModule,
     AuditModule,
   ],
