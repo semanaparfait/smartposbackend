@@ -11,6 +11,10 @@ import {
   StockMovementReasonEnum,
 } from './entities/stock-movement.entity';
 
+// Marks the stock a product starts with, so it isn't mistaken for a count that
+// found more than expected.
+export const OPENING_STOCK_NOTE = 'Opening stock';
+
 export interface LowStockProduct {
   id: string;
   name: string;
@@ -302,7 +306,9 @@ export class StockService {
   }
 
   // For each ingredient over the last `days`: how much went into sales, was wasted
-  // and arrived. Valued at today's cost, so it shows the size of each, not past spend.
+  // and arrived, and how far stock counts were off. A count below what was expected
+  // is stock nothing explains: waste not recorded, recipes set too low, or theft.
+  // Valued at today's cost, so it shows the size of each, not past spend.
   async getIngredientUsage(user: Payload, days: number, companyId?: string) {
     const company = scopeCompanyId(user, companyId);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -315,11 +321,15 @@ export class StockService {
       used: string;
       wasted: string;
       received: string;
+      counted: string;
     }[] = await this.movementRepo.query(
       `SELECT p.id, p.name, p.unit, p.buying_price AS cost,
               COALESCE(SUM(-m.change) FILTER (WHERE m.reason = 'SALE'), 0) AS used,
               COALESCE(SUM(-m.change) FILTER (WHERE m.reason = 'WASTE'), 0) AS wasted,
-              COALESCE(SUM(m.change) FILTER (WHERE m.reason = 'RESTOCK'), 0) AS received
+              COALESCE(SUM(m.change) FILTER (WHERE m.reason = 'RESTOCK'), 0) AS received,
+              COALESCE(SUM(m.change) FILTER (
+                WHERE m.reason = 'ADJUSTMENT' AND m.note IS DISTINCT FROM $3
+              ), 0) AS counted
          FROM products p
          LEFT JOIN stock_movements m
            ON m.product_id = p.id AND m."createdAt" >= $1
@@ -327,7 +337,7 @@ export class StockService {
           AND ($2::uuid IS NULL OR p.company_id = $2)
         GROUP BY p.id
         ORDER BY used DESC, p.name ASC`,
-      [since, company ?? null],
+      [since, company ?? null, OPENING_STOCK_NOTE],
     );
 
     return rows.map((row) => ({
@@ -338,6 +348,8 @@ export class StockService {
       used: Number(row.used),
       wasted: Number(row.wasted),
       received: Number(row.received),
+      // Below zero: counts found less than expected.
+      counted: Number(row.counted),
     }));
   }
 

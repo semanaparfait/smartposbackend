@@ -18,7 +18,7 @@ import { CreateProductDto } from './dto/request/create-product.dto';
 import { UpdateProductDto } from './dto/request/update-product.dto';
 import { RestockProductDto } from './dto/request/restock-product.dto';
 import { StockMovementReasonEnum } from './entities/stock-movement.entity';
-import { StockService } from './stock.service';
+import { OPENING_STOCK_NOTE, StockService } from './stock.service';
 import { FileService } from '../file/file.service';
 import { Payload } from 'src/util/token.service';
 import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
@@ -155,7 +155,14 @@ export class ProductService {
         );
 
         if (stockQuantity)
-          await this.countStock(manager, user, created.id, stockQuantity, 0);
+          await this.countStock(
+            manager,
+            user,
+            created.id,
+            stockQuantity,
+            0,
+            OPENING_STOCK_NOTE,
+          );
 
         return created;
       }),
@@ -434,12 +441,14 @@ export class ProductService {
     productId: string,
     counted: number,
     current: number,
+    note?: string,
   ) {
     return this.stockService.apply(manager, {
       productId,
       change: counted - current,
       reason: StockMovementReasonEnum.ADJUSTMENT,
       userId: user.sub,
+      note,
     });
   }
 
