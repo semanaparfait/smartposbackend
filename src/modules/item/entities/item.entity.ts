@@ -17,6 +17,17 @@ export class Item extends BaseEntity {
   @Column({ name: 'total_price', type: 'decimal', scale: 2 })
   totalPrice!: number;
 
+  // What one unit cost when it was paid for: from its recipe, or its buying price.
+  // Kept so later price changes don't alter past profit. Null until paid.
+  @Column({
+    name: 'unit_cost',
+    type: 'decimal',
+    precision: 14,
+    scale: 4,
+    nullable: true,
+  })
+  unitCost!: number | null;
+
   // For the kitchen, e.g. "No onions".
   @Column({ type: 'varchar', length: 255, nullable: true })
   note!: string | null;

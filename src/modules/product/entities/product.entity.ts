@@ -69,6 +69,20 @@ export class Product extends BaseEntity {
   @Column({ type: 'varchar', length: 20, default: 'Piece' })
   unit!: string;
 
+  // How it is bought, when that differs from `unit`: a Tray of 30 eggs counted in
+  // Piece. Stock and recipes stay in `unit`.
+  @Column({ name: 'purchase_unit', type: 'varchar', length: 20, nullable: true })
+  purchaseUnit!: string | null;
+
+  @Column({
+    name: 'purchase_size',
+    type: 'decimal',
+    precision: 12,
+    scale: 3,
+    nullable: true,
+  })
+  purchaseSize!: number | null;
+
   // Off by default: the product sells without any stock being counted.
   @Column({ name: 'track_stock', default: false })
   trackStock!: boolean;
@@ -99,6 +113,14 @@ export class Product extends BaseEntity {
   @Column({ name: 'send_to_kitchen', default: false })
   sendToKitchen!: boolean;
 
+  // Stock used to make other products; never sold on its own.
+  @Column({ name: 'is_ingredient', default: false })
+  isIngredient!: boolean;
+
   @OneToMany(() => Item, (item) => item.product)
   items!: Item[];
+
+  // Not stored: how many can be made from current stock. Null when it doesn't
+  // depend on stock, i.e. no recipe, or no stock-tracked ingredients in it.
+  canMake?: number | null;
 }

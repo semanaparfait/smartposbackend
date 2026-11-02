@@ -15,6 +15,8 @@ export enum StockMovementReasonEnum {
   SALE = 'SALE',
   RESTOCK = 'RESTOCK',
   ADJUSTMENT = 'ADJUSTMENT',
+  // Spoiled, spilled or otherwise lost; the note says why.
+  WASTE = 'WASTE',
   REFUND = 'REFUND',
 }
 

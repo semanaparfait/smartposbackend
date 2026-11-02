@@ -4,13 +4,19 @@ import { ProductController } from './product.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProductCategory } from './entities/product-category.entity';
 import { Product } from './entities/product.entity';
+import { RecipeItem } from './entities/recipe-item.entity';
 import { StockMovement } from './entities/stock-movement.entity';
 import { StockService } from './stock.service';
 import { FileModule } from '../file/file.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ProductCategory, Product, StockMovement]),
+    TypeOrmModule.forFeature([
+      ProductCategory,
+      Product,
+      RecipeItem,
+      StockMovement,
+    ]),
     FileModule,
   ],
   controllers: [ProductController],

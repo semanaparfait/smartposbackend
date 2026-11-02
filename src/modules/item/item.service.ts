@@ -144,6 +144,9 @@ export class ItemService {
   private async addToCart(cart: Cart, product: Product, quantity: number) {
     if (!product.active) throw new BadRequestException('Product is not active');
 
+    if (product.isIngredient)
+      throw new BadRequestException('Ingredients cannot be sold');
+
     const existing = cart.items.find((i) => i.product.id === product.id);
 
     // Only cart.id is persisted; the company is carried along for the audit log.

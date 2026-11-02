@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   UploadedFile,
   UploadedFiles,
@@ -26,6 +27,8 @@ import { UpdateProductCategoryDto } from './dto/request/update-product-category.
 import { CreateProductDto } from './dto/request/create-product.dto';
 import { UpdateProductDto } from './dto/request/update-product.dto';
 import { RestockProductDto } from './dto/request/restock-product.dto';
+import { SaveRecipeDto } from './dto/request/save-recipe.dto';
+import { RecordWasteDto } from './dto/request/record-waste.dto';
 import { StockService } from './stock.service';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -33,7 +36,6 @@ import { AnyEmployee } from 'src/common/decorators/any-employee.decorator';
 import { UserRole } from '../user/entities/user.entity';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
-import { companyWhere } from 'src/common/utils/company-scope';
 import { FileUploadInterceptor } from 'src/common/interceptors/file-upload.interceptor';
 import { ProductIdParam } from './dto/request/product-param.dto';
 import { ProductCategoryIdParam } from './dto/request/product-category-param.dto';
@@ -116,12 +118,13 @@ export class ProductController {
   @Post('products')
   @RequirePermissions('products.manage')
   @ApiOperation({ summary: 'Create product' })
-  @UseInterceptors(new FileUploadInterceptor('picture', 1))
+  // Optional here because ingredients have none; the service asks for it otherwise.
+  @UseInterceptors(new FileUploadInterceptor('picture', 1, false))
   @ApiConsumes('multipart/form-data')
   async createProduct(
     @User() user: Payload,
     @Body() dto: CreateProductDto,
-    @UploadedFile() picture: Express.Multer.File,
+    @UploadedFile() picture?: Express.Multer.File,
   ) {
     return this.service.createProduct(user, dto, picture);
   }
@@ -139,6 +142,31 @@ export class ProductController {
   }
 
   // Declared before 'products/:productId' so they aren't read as a product id.
+  @Get('products/image-search')
+  @RequirePermissions('products.manage')
+  @ApiOperation({ summary: 'Find free pictures by name' })
+  @ApiQuery({ name: 'q', example: 'beef' })
+  searchImages(@Query('q') query: string) {
+    return this.service.searchImages(query);
+  }
+
+  @Get('products/ingredient-usage')
+  @RequirePermissions('inventory.view')
+  @ApiOperation({ summary: 'Ingredients used, wasted and received in a period' })
+  @ApiQuery({ name: 'days', required: false, example: 30 })
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    description: 'Super admin only',
+  })
+  getIngredientUsage(
+    @User() user: Payload,
+    @Query('days', new ParseIntPipe({ optional: true })) days?: number,
+    @Query('companyId') companyId?: string,
+  ) {
+    return this.stockService.getIngredientUsage(user, days ?? 30, companyId);
+  }
+
   @Get('products/low-stock')
   @RequirePermissions('inventory.view')
   @ApiOperation({ summary: 'Products at or below their low-stock level' })
@@ -174,7 +202,7 @@ export class ProductController {
   @AnyEmployee()
   @ApiOperation({ summary: 'Get product by id' })
   getProduct(@User() user: Payload, @Param() { productId }: ProductIdParam) {
-    return this.service.getProduct({ id: productId, ...companyWhere(user) });
+    return this.service.viewProduct(user, productId);
   }
 
   @Patch('products/:productId')
@@ -200,6 +228,44 @@ export class ProductController {
     @Body() dto: RestockProductDto,
   ) {
     return this.service.restock(user, productId, dto);
+  }
+
+  @Post('products/:productId/waste')
+  @RequirePermissions('inventory.adjust')
+  @ApiOperation({
+    summary: 'Record stock lost to spoilage, spills and the like',
+  })
+  recordWaste(
+    @User() user: Payload,
+    @Param() { productId }: ProductIdParam,
+    @Body() dto: RecordWasteDto,
+  ) {
+    return this.service.recordWaste(user, productId, dto);
+  }
+
+  @Get('products/:productId/used-in')
+  @RequirePermissions('inventory.view')
+  @ApiOperation({ summary: 'The products whose recipes use this ingredient' })
+  getUsedIn(@User() user: Payload, @Param() { productId }: ProductIdParam) {
+    return this.service.getUsedIn(user, productId);
+  }
+
+  @Get('products/:productId/recipe')
+  @RequirePermissions('products.manage')
+  @ApiOperation({ summary: 'What one unit of this product is made from' })
+  getRecipe(@User() user: Payload, @Param() { productId }: ProductIdParam) {
+    return this.service.getRecipe(user, productId);
+  }
+
+  @Put('products/:productId/recipe')
+  @RequirePermissions('products.manage')
+  @ApiOperation({ summary: 'Replace the recipe of this product' })
+  saveRecipe(
+    @User() user: Payload,
+    @Param() { productId }: ProductIdParam,
+    @Body() dto: SaveRecipeDto,
+  ) {
+    return this.service.saveRecipe(user, productId, dto);
   }
 
   @Get('products/:productId/stock-movements')

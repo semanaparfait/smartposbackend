@@ -11,6 +11,7 @@ import {
   IsUUID,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import {
   blankToNull,
@@ -44,17 +45,34 @@ export class CreateProductDto {
   @IsOptional()
   picture?: any;
 
+  @ApiProperty({
+    required: false,
+    description: 'A picture from image search or a pasted link, instead of an upload',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  pictureUrl?: string;
+
   @ApiProperty()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   buyingPrice!: number;
 
+  // Ingredients are never sold, so theirs is ignored.
   @ApiProperty()
   @Type(() => Number)
+  @ValidateIf((dto: CreateProductDto) => !dto.isIngredient)
   @IsNumber()
   @IsPositive({ message: 'Selling price must be above 0' })
   sellingPrice!: number;
+
+  @ApiProperty({ required: false, default: false })
+  @Transform(toBoolean)
+  @IsOptional()
+  @IsBoolean()
+  isIngredient?: boolean;
 
   @ApiProperty({ required: false })
   @Transform(blankToNull)
@@ -91,6 +109,25 @@ export class CreateProductDto {
   @IsNotEmpty()
   @MaxLength(20)
   unit?: string;
+
+  @ApiProperty({ required: false, nullable: true, example: 'Tray' })
+  @Transform(blankToNull)
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  purchaseUnit?: string | null;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    example: 30,
+    description: 'How many of `unit` are in one purchaseUnit',
+  })
+  @Transform(toNumberOrNull)
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @IsPositive()
+  purchaseSize?: number | null;
 
   @ApiProperty({ required: false, default: false })
   @Transform(toBoolean)
