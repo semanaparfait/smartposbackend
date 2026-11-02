@@ -17,6 +17,7 @@ import {
   ExpenseCategoryEnum,
   ExpensePaidFromEnum,
   ExpenseRepeatEnum,
+  RepaidWithEnum,
 } from '../entities/expense.entity';
 
 export class CreateExpenseDto {
@@ -121,6 +122,12 @@ export class SubmitExpenseDto {
   })
   @IsOptional()
   picture?: any;
+}
+
+export class RepaidExpenseDto {
+  @ApiProperty({ enum: RepaidWithEnum })
+  @IsEnum(RepaidWithEnum, { message: 'Say how it was paid back' })
+  method!: RepaidWithEnum;
 }
 
 export class RejectExpenseDto {

@@ -42,6 +42,13 @@ export enum ExpensePaidFromEnum {
   OTHER = 'OTHER',
 }
 
+// How the company paid a worker back.
+export enum RepaidWithEnum {
+  CASH = 'CASH',
+  MOMO = 'MOMO',
+  BANK = 'BANK',
+}
+
 // Money the company spends to run: bills, rent, supplies.
 @Entity('expenses')
 export class Expense extends BaseEntity {
@@ -132,4 +139,24 @@ export class Expense extends BaseEntity {
     foreignKeyConstraintName: 'FK_expenses_reviewed_by',
   })
   reviewedBy!: User | null;
+
+  // Paid with the worker's own money: when the company paid it back.
+  @Column({ name: 'repaid_at', type: 'timestamptz', nullable: true })
+  repaidAt!: Date | null;
+
+  @Column({
+    name: 'repaid_with',
+    type: 'enum',
+    enum: RepaidWithEnum,
+    enumName: 'expenses_repaid_with_enum',
+    nullable: true,
+  })
+  repaidWith!: RepaidWithEnum | null;
+
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({
+    name: 'repaid_by_id',
+    foreignKeyConstraintName: 'FK_expenses_repaid_by',
+  })
+  repaidBy!: User | null;
 }

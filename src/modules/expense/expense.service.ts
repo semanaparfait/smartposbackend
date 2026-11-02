@@ -17,8 +17,10 @@ import { FileService } from '../file/file.service';
 import { UserRole } from '../user/entities/user.entity';
 import {
   Expense,
+  ExpensePaidFromEnum,
   ExpenseRepeatEnum,
   ExpenseStatusEnum,
+  RepaidWithEnum,
 } from './entities/expense.entity';
 import {
   CreateExpenseDto,
@@ -32,11 +34,12 @@ const person = (user: { id: string; name: string } | null) =>
   user ? { id: user.id, name: user.name } : null;
 
 const present = (expense: Expense) => {
-  const { user, reviewedBy, company: _company, ...rest } = expense;
+  const { user, reviewedBy, repaidBy, company: _company, ...rest } = expense;
   return {
     ...rest,
     recordedBy: person(user),
     reviewedBy: person(reviewedBy),
+    repaidBy: person(repaidBy),
   };
 };
 
@@ -58,7 +61,7 @@ export class ExpenseService {
   async list(user: Payload, companyId?: string) {
     const expenses = await this.expenseRepo.find({
       where: companyWhere(user, companyId),
-      relations: { user: true, reviewedBy: true },
+      relations: { user: true, reviewedBy: true, repaidBy: true },
       order: { startDate: 'DESC', createdAt: 'DESC' },
     });
 
@@ -144,7 +147,7 @@ export class ExpenseService {
   async mine(user: Payload) {
     const expenses = await this.expenseRepo.find({
       where: { ...companyWhere(user), user: { id: user.sub } },
-      relations: { user: true, reviewedBy: true },
+      relations: { user: true, reviewedBy: true, repaidBy: true },
       order: { createdAt: 'DESC' },
       take: 200,
     });
@@ -200,6 +203,45 @@ export class ExpenseService {
     return this.getOne(user, id);
   }
 
+  // The worker paid with their own money; the company has now paid them back.
+  async repaid(user: Payload, id: string, method: RepaidWithEnum) {
+    const expense = await this.find(user, id);
+
+    if (
+      expense.status !== ExpenseStatusEnum.APPROVED ||
+      expense.paidFrom !== ExpensePaidFromEnum.OWN_MONEY
+    )
+      throw new BadRequestException(
+        "Only an approved expense paid with a worker's own money is paid back",
+      );
+    if (expense.repaidAt)
+      throw new BadRequestException('It was already paid back');
+    if (user.role === UserRole.EMPLOYEE && expense.user?.id === user.sub)
+      throw new ForbiddenException(
+        'You cannot mark your own money as paid back. Someone else has to',
+      );
+
+    await this.expenseRepo.update(id, {
+      repaidAt: new Date(),
+      repaidWith: method,
+      repaidBy: { id: user.sub },
+    });
+
+    return this.getOne(user, id);
+  }
+
+  // Marked as paid back by mistake.
+  async notRepaid(user: Payload, id: string) {
+    await this.find(user, id);
+    await this.expenseRepo.update(id, {
+      repaidAt: null,
+      repaidWith: null,
+      repaidBy: null,
+    });
+
+    return this.getOne(user, id);
+  }
+
   // Monthly salaries of the company's workers whose login is not turned off.
   async salaries(user: Payload, companyId?: string) {
     const scope = scopeCompanyId(user, companyId);
@@ -226,7 +268,7 @@ export class ExpenseService {
   private async find(user: Payload, id: string) {
     const expense = await this.expenseRepo.findOne({
       where: { id, ...companyWhere(user) },
-      relations: { user: true, reviewedBy: true },
+      relations: { user: true, reviewedBy: true, repaidBy: true },
     });
 
     if (!expense) throw new NotFoundException('Expense not found');

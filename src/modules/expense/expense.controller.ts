@@ -30,6 +30,7 @@ import {
   CreateExpenseDto,
   ExpenseIdParam,
   RejectExpenseDto,
+  RepaidExpenseDto,
   SubmitExpenseDto,
   UpdateExpenseDto,
 } from './dto/expense.dto';
@@ -118,6 +119,26 @@ export class ExpenseController {
     @Body() dto: RejectExpenseDto,
   ) {
     return this.service.reject(user, expenseId, dto.note);
+  }
+
+  @Patch(':expenseId/repaid')
+  @RequirePermissions('expenses.manage')
+  @ApiOperation({
+    summary: 'The worker who paid with their own money was paid back',
+  })
+  repaid(
+    @User() user: Payload,
+    @Param() { expenseId }: ExpenseIdParam,
+    @Body() dto: RepaidExpenseDto,
+  ) {
+    return this.service.repaid(user, expenseId, dto.method);
+  }
+
+  @Patch(':expenseId/not-repaid')
+  @RequirePermissions('expenses.manage')
+  @ApiOperation({ summary: 'Undo a paid back marked by mistake' })
+  notRepaid(@User() user: Payload, @Param() { expenseId }: ExpenseIdParam) {
+    return this.service.notRepaid(user, expenseId);
   }
 
   // ---------------- Recorded by managers ----------------
