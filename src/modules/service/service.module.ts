@@ -1,0 +1,25 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { FileModule } from '../file/file.module';
+import { ServiceOffering } from './entities/service.entity';
+import { ServiceUnit } from './entities/service-unit.entity';
+import { Booking } from './entities/booking.entity';
+import { BookingPayment } from './entities/booking-payment.entity';
+import { ServiceService } from './service.service';
+import { BookingService } from './booking.service';
+import { ServiceController } from './service.controller';
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([
+      ServiceOffering,
+      ServiceUnit,
+      Booking,
+      BookingPayment,
+    ]),
+    FileModule,
+  ],
+  controllers: [ServiceController],
+  providers: [ServiceService, BookingService],
+})
+export class ServiceModule {}

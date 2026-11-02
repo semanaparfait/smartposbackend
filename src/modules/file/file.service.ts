@@ -57,7 +57,7 @@ interface CommonsResponse {
       }
     >;
   };
-};
+}
 
 const IMAGE_HOSTS = ['upload.wikimedia.org', 'thumb.wikimedia.org'];
 const IMAGE_SEARCH_RESULTS = 48;
@@ -284,10 +284,11 @@ export class FileService {
     await this.deleteFromStorage(old);
   }
 
-  // Uploads an image that is referenced by URL only (e.g. a company logo) and
-  // returns its optimized delivery link.
-  async uploadImage(file: Express.Multer.File, transformation: string) {
-    const uploaded = await this.uploadFile(file);
+  // Uploads an image (a file, or a link from image search) that is referenced by
+  // URL only (e.g. a company logo, a service picture) and returns its optimized
+  // delivery link.
+  async uploadImage(picture: ImageSource, transformation: string) {
+    const uploaded = await this.upload(picture);
     return uploaded.secure_url.replace(
       '/upload/',
       `/upload/${transformation}/`,

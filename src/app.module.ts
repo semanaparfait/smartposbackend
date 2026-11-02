@@ -25,6 +25,7 @@ import { SeederModule } from './database/seeder/seeder.module';
 import { FileModule } from './modules/file/file.module';
 import cloudinaryConfig from './config/cloudinary.config';
 import { RealtimeModule } from './modules/realtime/realtime.module';
+import { ServiceModule } from './modules/service/service.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { RealtimeModule } from './modules/realtime/realtime.module';
     CartModule,
     ItemModule,
     OrderModule,
+    ServiceModule,
     FileModule,
     AuditModule,
   ],

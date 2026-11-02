@@ -18,6 +18,8 @@ export const PERMISSIONS: Record<string, string[]> = {
   // Tables & services
   'tables.manage': [],
   'services.manage': [],
+  'services.setup': ['services.manage'],
+  'services.refund': ['services.manage'],
   // Products & stock
   'inventory.view': [],
   'inventory.adjust': ['inventory.view'],
