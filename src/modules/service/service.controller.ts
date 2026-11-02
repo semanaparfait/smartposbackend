@@ -27,6 +27,13 @@ import { Payload } from 'src/util/token.service';
 import { UserRole } from '../user/entities/user.entity';
 import { ServiceService } from './service.service';
 import { BookingService } from './booking.service';
+import { ReceiptService } from './receipt.service';
+import {
+  ConfirmReceiptsDto,
+  MissingReceiptDto,
+  PaymentIdParam,
+  ReceiptQueryDto,
+} from './dto/receipt.dto';
 import {
   CreateServiceDto,
   CreateUnitDto,
@@ -57,6 +64,7 @@ export class ServiceController {
   constructor(
     private readonly services: ServiceService,
     private readonly bookings: BookingService,
+    private readonly receipts: ReceiptService,
   ) {}
 
   // ---------------- Services ----------------
@@ -226,6 +234,42 @@ export class ServiceController {
     @Body() dto: RefundBookingDto,
   ) {
     return this.bookings.refund(user, bookingId, dto);
+  }
+
+  // ---------------- Checking the money ----------------
+
+  @Get('booking-payments')
+  @RequirePermissions('finance.verify')
+  @ApiOperation({ summary: 'Booking payments to check, with who took them' })
+  getReceipts(@User() user: Payload, @Query() query: ReceiptQueryDto) {
+    return this.receipts.list(user, query);
+  }
+
+  @Patch('booking-payments/confirm')
+  @RequirePermissions('finance.verify')
+  @ApiOperation({ summary: 'Confirm the money of these payments was received' })
+  confirmReceipts(@User() user: Payload, @Body() dto: ConfirmReceiptsDto) {
+    return this.receipts.confirm(user, dto);
+  }
+
+  @Patch('booking-payments/:paymentId/missing')
+  @RequirePermissions('finance.verify')
+  @ApiOperation({
+    summary: 'Report the money as not received, saying what happened',
+  })
+  reportMissing(
+    @User() user: Payload,
+    @Param() { paymentId }: PaymentIdParam,
+    @Body() dto: MissingReceiptDto,
+  ) {
+    return this.receipts.missing(user, paymentId, dto.note);
+  }
+
+  @Patch('booking-payments/:paymentId/reopen')
+  @RequirePermissions('finance.verify')
+  @ApiOperation({ summary: 'Put a checked payment back to waiting' })
+  reopenReceipt(@User() user: Payload, @Param() { paymentId }: PaymentIdParam) {
+    return this.receipts.reopen(user, paymentId);
   }
 
   @Post('bookings/:bookingId/payments')

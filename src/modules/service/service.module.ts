@@ -7,6 +7,7 @@ import { Booking } from './entities/booking.entity';
 import { BookingPayment } from './entities/booking-payment.entity';
 import { ServiceService } from './service.service';
 import { BookingService } from './booking.service';
+import { ReceiptService } from './receipt.service';
 import { ServiceController } from './service.controller';
 
 @Module({
@@ -20,6 +21,6 @@ import { ServiceController } from './service.controller';
     FileModule,
   ],
   controllers: [ServiceController],
-  providers: [ServiceService, BookingService],
+  providers: [ServiceService, BookingService, ReceiptService],
 })
 export class ServiceModule {}

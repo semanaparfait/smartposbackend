@@ -77,9 +77,12 @@ const present = (booking: Booking) => {
     takenBy: user ? { id: user.id, name: user.name } : null,
     payments: (payments ?? [])
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-      .map(({ user: by, booking: _booking, ...payment }) => ({
+      .map(({ user: by, booking: _booking, receiptCheckedBy, ...payment }) => ({
         ...payment,
         takenBy: by ? { id: by.id, name: by.name } : null,
+        receiptCheckedBy: receiptCheckedBy
+          ? { id: receiptCheckedBy.id, name: receiptCheckedBy.name }
+          : null,
       })),
     paid,
     refunded,
@@ -248,9 +251,10 @@ export class BookingService {
         service: true,
         unit: true,
         user: true,
-        payments: { user: true },
+        payments: { user: true, receiptCheckedBy: true },
       },
-      order: { startAt: 'ASC' },
+      // Without dates, the newest come first so the limit drops only old ones.
+      order: { startAt: query.from || query.to ? 'ASC' : 'DESC' },
       take: 500,
     });
 
@@ -554,7 +558,7 @@ export class BookingService {
         service: true,
         unit: true,
         user: true,
-        payments: { user: true },
+        payments: { user: true, receiptCheckedBy: true },
       },
     });
 
