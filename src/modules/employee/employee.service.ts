@@ -21,6 +21,7 @@ import { CompanyService } from '../company/company.service';
 import { FileService } from '../file/file.service';
 import {
   assertCanGrant,
+  effectivePermissions,
   missingPermissions,
   withRequirements,
 } from 'src/common/permissions/permissions';
@@ -288,10 +289,24 @@ export class EmployeeService {
         `${blocked.join(', ')} needs a permission that is taken away`,
       );
 
+    // Selling on credit needs a limit, so a worker can't give unlimited credit.
+    const creditLimit =
+      dto.creditLimit !== undefined ? dto.creditLimit : employee.creditLimit;
+    const final = effectivePermissions(
+      employee.role ? employee.role.permissions : undefined,
+      extra,
+      removed,
+    );
+    if ((final === null || final.includes('sales.credit')) && !creditLimit)
+      throw new BadRequestException(
+        'Set a credit limit: the most this worker can give on credit in one sale',
+      );
+
     // save() (not update()) so the change is recorded in the audit history.
     Object.assign(employee, {
       extraPermissions: extra,
       removedPermissions: removed,
+      creditLimit,
     });
     await this.employeeRepo.save(employee);
 

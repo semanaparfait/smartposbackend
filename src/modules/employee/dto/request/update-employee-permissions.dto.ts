@@ -1,5 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ArrayUnique, IsArray, IsIn, IsOptional } from 'class-validator';
+import { Transform } from 'class-transformer';
+import {
+  ArrayUnique,
+  IsArray,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+} from 'class-validator';
+import { toNumberOrNull } from 'src/common/utils/form-values';
 import { PERMISSION_KEYS } from 'src/common/permissions/permissions';
 
 const isPermissionKey = IsIn(PERMISSION_KEYS, {
@@ -39,4 +48,16 @@ export class UpdateEmployeePermissionsDto {
   @ArrayUnique()
   @isPermissionKey
   removedPermissions?: string[];
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'Most this worker may give on credit in one sale. Required when they can sell on credit.',
+  })
+  @Transform(toNumberOrNull)
+  @IsOptional()
+  @IsNumber()
+  @IsPositive({ message: 'The credit limit must be above 0' })
+  creditLimit?: number | null;
 }

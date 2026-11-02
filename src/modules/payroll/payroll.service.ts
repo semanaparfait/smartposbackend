@@ -12,12 +12,15 @@ import { Employee } from '../employee/entities/employee.entity';
 import { FileService } from '../file/file.service';
 import { UserRole } from '../user/entities/user.entity';
 import { StaffDebt } from './entities/staff-debt.entity';
+import { SalaryPayment } from './entities/salary-payment.entity';
 import {
+  DebtPaymentMethodEnum,
   DebtPaymentStatusEnum,
   StaffDebtPayment,
 } from './entities/staff-debt-payment.entity';
 import {
   CreateStaffDebtDto,
+  PaySalaryDto,
   RecordDebtPaymentDto,
   SubmitDebtPaymentDto,
 } from './dto/payroll.dto';
@@ -36,6 +39,19 @@ const presentDebt = (debt: StaffDebt) => ({
   source: debt.source,
   chargedBy: person(debt.user),
   createdAt: debt.createdAt,
+});
+
+const presentSalary = (payment: SalaryPayment) => ({
+  id: payment.id,
+  month: payment.month,
+  salary: Number(payment.salary),
+  deducted: Number(payment.deducted),
+  amount: Number(payment.amount),
+  method: payment.method,
+  paidOn: payment.paidOn,
+  note: payment.note,
+  paidBy: person(payment.user),
+  createdAt: payment.createdAt,
 });
 
 const presentPayment = (payment: StaffDebtPayment) => ({
@@ -80,6 +96,9 @@ export class PayrollService {
     @InjectRepository(StaffDebtPayment)
     private readonly paymentRepo: Repository<StaffDebtPayment>,
 
+    @InjectRepository(SalaryPayment)
+    private readonly salaryRepo: Repository<SalaryPayment>,
+
     @InjectRepository(Employee)
     private readonly employeeRepo: Repository<Employee>,
 
@@ -90,7 +109,7 @@ export class PayrollService {
   async overview(user: Payload, companyId?: string) {
     const scope = scopeCompanyId(user, companyId);
     const where = scope ? { company: { id: scope } } : {};
-    const [employees, debts, payments] = await Promise.all([
+    const [employees, debts, payments, salaries] = await Promise.all([
       this.employeeRepo.find({ where, relations: { user: true } }),
       this.debtRepo.find({
         where,
@@ -101,6 +120,11 @@ export class PayrollService {
         where,
         relations: { employee: true, user: true, reviewedBy: true },
         order: { createdAt: 'DESC' },
+      }),
+      this.salaryRepo.find({
+        where,
+        relations: { employee: true, user: true },
+        order: { month: 'DESC' },
       }),
     ]);
 
@@ -121,9 +145,18 @@ export class PayrollService {
           toPay: money(Math.max(0, salary - totals.owed)),
           debts: own.map(presentDebt),
           payments: paid.map(presentPayment),
+          salaryPayments: salaries
+            .filter((s) => s.employee.id === employee.id)
+            .map(presentSalary),
         };
       })
-      .filter((w) => w.salary > 0 || w.debts.length || w.payments.length)
+      .filter(
+        (w) =>
+          w.salary > 0 ||
+          w.debts.length ||
+          w.payments.length ||
+          w.salaryPayments.length,
+      )
       .sort((a, b) => b.owed - a.owed || a.name.localeCompare(b.name));
   }
 
@@ -210,7 +243,7 @@ export class PayrollService {
     });
     if (!employee) return null;
 
-    const [debts, payments] = await Promise.all([
+    const [debts, payments, salaries] = await Promise.all([
       this.debtRepo.find({
         where: { employee: { id: employee.id } },
         relations: { user: true },
@@ -220,6 +253,12 @@ export class PayrollService {
         where: { employee: { id: employee.id } },
         relations: { user: true, reviewedBy: true },
         order: { createdAt: 'DESC' },
+      }),
+      this.salaryRepo.find({
+        where: { employee: { id: employee.id } },
+        relations: { user: true },
+        order: { month: 'DESC' },
+        take: 24,
       }),
     ]);
     const totals = balance(debts, payments);
@@ -231,6 +270,7 @@ export class PayrollService {
       toPay: money(Math.max(0, salary - totals.owed)),
       debts: debts.map(presentDebt),
       payments: payments.map(presentPayment),
+      salaryPayments: salaries.map(presentSalary),
     };
   }
 
@@ -292,6 +332,91 @@ export class PayrollService {
     await this.paymentRepo.remove(payment);
     await this.fileService.deleteByUrl(payment.proofUrl);
     return this.mine(user);
+  }
+
+  // ---------------- Salaries paid ----------------
+
+  // Pays one month. What is taken off for debts is recorded as a debt payment
+  // at the same time, so the debt goes down by exactly that.
+  async paySalary(user: Payload, dto: PaySalaryDto) {
+    const employee = await this.findEmployee(user, dto.employeeId);
+    this.assertNotOwn(user, employee);
+
+    if (
+      await this.salaryRepo.existsBy({
+        employee: { id: employee.id },
+        month: dto.month,
+      })
+    )
+      throw new BadRequestException(
+        `${employee.name}'s salary for ${dto.month} is already paid`,
+      );
+
+    const salary = Number(employee.salary) || 0;
+    const { owed } = await this.totalsOf(employee.id);
+
+    if (dto.deducted > owed)
+      throw new BadRequestException(
+        `${employee.name} owes only ${owed.toLocaleString()} RWF`,
+      );
+    if (dto.deducted > salary)
+      throw new BadRequestException('You cannot take off more than the salary');
+    if (dto.amount <= 0 && dto.deducted <= 0)
+      throw new BadRequestException('Enter the amount paid');
+
+    await this.salaryRepo.manager.transaction(async (manager) => {
+      const deduction =
+        dto.deducted > 0
+          ? await manager.save(
+              manager.create(StaffDebtPayment, {
+                company: { id: employee.company.id },
+                employee: { id: employee.id },
+                amount: money(dto.deducted),
+                method: DebtPaymentMethodEnum.SALARY,
+                status: DebtPaymentStatusEnum.APPROVED,
+                note: `${dto.month} salary`,
+                user: { id: user.sub },
+                reviewedAt: new Date(),
+                reviewedBy: { id: user.sub },
+              }),
+            )
+          : null;
+
+      await manager.save(
+        manager.create(SalaryPayment, {
+          company: { id: employee.company.id },
+          employee: { id: employee.id },
+          month: dto.month,
+          salary,
+          deducted: money(dto.deducted),
+          amount: money(dto.amount),
+          method: dto.method,
+          paidOn: dto.paidOn,
+          note: dto.note ?? null,
+          user: { id: user.sub },
+          debtPayment: deduction ? { id: deduction.id } : null,
+        }),
+      );
+    });
+
+    return this.overview(user);
+  }
+
+  // Recorded by mistake: the month is open again and the deduction is undone.
+  async undoSalary(user: Payload, id: string) {
+    const payment = await this.salaryRepo.findOne({
+      where: { id, ...companyWhere(user) },
+      relations: { debtPayment: true, employee: { user: true } },
+    });
+    if (!payment) throw new NotFoundException('Salary payment not found');
+    this.assertNotOwn(user, payment.employee);
+
+    await this.salaryRepo.manager.transaction(async (manager) => {
+      await manager.remove(payment);
+      if (payment.debtPayment) await manager.remove(payment.debtPayment);
+    });
+
+    return this.overview(user);
   }
 
   // ---------------- Helpers ----------------

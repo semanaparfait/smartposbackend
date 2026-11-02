@@ -56,6 +56,17 @@ export class Employee extends BaseEntity {
   @JoinColumn({ name: 'company_id' })
   company!: Company;
 
+  // Most this worker may give on credit in one sale. Required once they are
+  // allowed to sell on credit; null = no credit sales.
+  @Column({
+    name: 'credit_limit',
+    type: 'decimal',
+    precision: 14,
+    scale: 2,
+    nullable: true,
+  })
+  creditLimit!: number | null;
+
   // Given on top of the role, for this employee only.
   @Column('text', { name: 'extra_permissions', array: true, default: '{}' })
   extraPermissions!: string[];

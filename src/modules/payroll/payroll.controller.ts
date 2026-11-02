@@ -31,6 +31,8 @@ import {
   CreateStaffDebtDto,
   DebtIdParam,
   DebtPaymentIdParam,
+  PaySalaryDto,
+  SalaryPaymentIdParam,
   RecordDebtPaymentDto,
   RejectDebtPaymentDto,
   SubmitDebtPaymentDto,
@@ -101,6 +103,25 @@ export class PayrollController {
   @ApiOperation({ summary: 'Remove a debt charged by mistake' })
   remove(@User() user: Payload, @Param() { debtId }: DebtIdParam) {
     return this.service.removeDebt(user, debtId);
+  }
+
+  @Post('salaries')
+  @RequirePermissions('payroll.manage')
+  @ApiOperation({
+    summary: "Record a month's salary paid, minus what they owe",
+  })
+  paySalary(@User() user: Payload, @Body() dto: PaySalaryDto) {
+    return this.service.paySalary(user, dto);
+  }
+
+  @Delete('salaries/:salaryPaymentId')
+  @RequirePermissions('payroll.manage')
+  @ApiOperation({ summary: 'Undo a salary payment recorded by mistake' })
+  undoSalary(
+    @User() user: Payload,
+    @Param() { salaryPaymentId }: SalaryPaymentIdParam,
+  ) {
+    return this.service.undoSalary(user, salaryPaymentId);
   }
 
   @Post('payments')

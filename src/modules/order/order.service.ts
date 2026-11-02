@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Payment, PaymentMethodEnum } from './entities/payment.entity';
+import { Employee } from '../employee/entities/employee.entity';
 import { CreateOrderDto } from './dto/request/create-order.dto';
 import { CompleteOrderDto } from './dto/request/complete-order.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -257,11 +259,37 @@ export class OrderService {
     return saved;
   }
 
+  // A worker gives at most their own limit on credit in one sale; owners decide
+  // for themselves.
+  private async assertCreditLimit(user: Payload, credit: number) {
+    if (user.role !== UserRole.EMPLOYEE) return;
+
+    const employee = await this.dataSource.getRepository(Employee).findOne({
+      where: { user: { id: user.sub } },
+    });
+    const limit = Number(employee?.creditLimit) || 0;
+
+    if (!limit)
+      throw new ForbiddenException(
+        'Your credit limit is not set. Ask the owner to set it before selling on credit',
+      );
+    if (credit > limit)
+      throw new ForbiddenException(
+        `You can give at most ${limit.toLocaleString()} RWF on credit in one sale`,
+      );
+  }
+
   async completeOrder(user: Payload, id: string, dto: CompleteOrderDto) {
     if (dto.payments.length > 1) requirePermission(user, 'sales.split_payment');
 
-    if (dto.payments.some((p) => p.method === PaymentMethodEnum.CREDIT))
+    const credit = dto.payments
+      .filter((p) => p.method === PaymentMethodEnum.CREDIT)
+      .reduce((sum, p) => sum + Number(p.amount), 0);
+
+    if (credit > 0) {
       requirePermission(user, 'sales.credit');
+      await this.assertCreditLimit(user, credit);
+    }
 
     const order = await this.getOrder(user, id);
 

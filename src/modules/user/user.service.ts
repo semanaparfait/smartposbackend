@@ -148,6 +148,11 @@ export class UserService {
     return {
       ...user,
       picture: user.employee?.profile ?? user.avatar ?? null,
+      // Most this worker may give on credit in one sale (null = none).
+      creditLimit:
+        user.employee?.creditLimit != null
+          ? Number(user.employee.creditLimit)
+          : null,
       // Same rule as RolesGuard (role + the employee's extra - removed). Left out
       // (= everything allowed) for owners, super admins and roles saved without a
       // list.

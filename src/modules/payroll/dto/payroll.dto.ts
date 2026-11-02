@@ -9,13 +9,16 @@ import {
   IsPositive,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
+  Min,
   MinLength,
   ValidateIf,
 } from 'class-validator';
 import { blankToNull } from 'src/common/utils/form-values';
 import { StaffDebtKindEnum } from '../entities/staff-debt.entity';
 import { DebtPaymentMethodEnum } from '../entities/staff-debt-payment.entity';
+import { SalaryMethodEnum } from '../entities/salary-payment.entity';
 
 // Charged to a worker: by employee, or by their login when it comes from a
 // count, a payment or an expense.
@@ -109,6 +112,52 @@ export class SubmitDebtPaymentDto {
   @ApiProperty({ type: 'string', format: 'binary', required: false })
   @IsOptional()
   picture?: any;
+}
+
+// A month's salary handed to a worker. What they owe can be taken off it.
+export class PaySalaryDto {
+  @ApiProperty()
+  @IsUUID('all', { message: 'Choose the worker' })
+  employeeId!: string;
+
+  @ApiProperty({ example: '2026-11' })
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/, { message: 'Choose the month' })
+  month!: string;
+
+  @ApiProperty({
+    description: 'Taken off for what the worker owes',
+    default: 0,
+  })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  deducted!: number;
+
+  @ApiProperty({ description: 'Handed to the worker' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  amount!: number;
+
+  @ApiProperty({ enum: SalaryMethodEnum })
+  @IsEnum(SalaryMethodEnum, { message: 'Say how the salary was paid' })
+  method!: SalaryMethodEnum;
+
+  @ApiProperty({ example: '2026-11-30' })
+  @IsDateString()
+  paidOn!: string;
+
+  @ApiProperty({ required: false })
+  @Transform(blankToNull)
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string | null;
+}
+
+export class SalaryPaymentIdParam {
+  @IsUUID()
+  salaryPaymentId!: string;
 }
 
 export class RejectDebtPaymentDto {
