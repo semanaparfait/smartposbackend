@@ -59,6 +59,10 @@ export class User extends BaseEntity {
   @Column({ default: true })
   mustChangePassword!: boolean;
 
+  // The app's language for this person: en, rw, fr or sw.
+  @Column({ type: 'varchar', length: 5, default: 'en' })
+  language!: string;
+
   @Column({ nullable: true })
   lastLoginAt!: Date;
 

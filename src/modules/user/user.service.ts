@@ -200,6 +200,8 @@ export class UserService {
 
     if (dto.name !== undefined) user.name = dto.name;
 
+    if (dto.language !== undefined) user.language = dto.language;
+
     const { password: _password, pin: _pin, ...changes } = user;
     await this.userRepo.save(changes);
 

@@ -1,11 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsEmail,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
   ValidateIf,
 } from 'class-validator';
+
+export const LANGUAGES = ['en', 'rw', 'fr', 'sw'];
 
 // What a user may change about themselves. Role, company and status are managed by
 // owners / super admin, so sending them is rejected.
@@ -29,6 +32,11 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsEmail()
   email?: string;
+
+  @ApiProperty({ required: false, enum: LANGUAGES })
+  @IsOptional()
+  @IsIn(LANGUAGES, { message: 'Choose English, Kinyarwanda, French or Swahili' })
+  language?: string;
 
   @ApiProperty({
     required: false,
