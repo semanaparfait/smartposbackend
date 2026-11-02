@@ -114,7 +114,11 @@ export class SubmitExpenseDto {
   @MaxLength(1000)
   note?: string | null;
 
-  @ApiProperty({ type: 'string', format: 'binary', description: 'Receipt photo' })
+  @ApiProperty({
+    type: 'string',
+    format: 'binary',
+    description: 'Receipt photo',
+  })
   @IsOptional()
   picture?: any;
 }

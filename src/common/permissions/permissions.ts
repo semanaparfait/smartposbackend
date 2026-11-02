@@ -28,6 +28,7 @@ export const PERMISSIONS: Record<string, string[]> = {
   'reports.view': [],
   'finance.verify': ['reports.view'],
   'expenses.manage': ['reports.view'],
+  'expenses.submit': [],
   'credits.view': [],
   // Team & settings
   'employees.manage': [],

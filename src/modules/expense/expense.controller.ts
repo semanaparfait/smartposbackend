@@ -7,10 +7,13 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConsumes,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -20,16 +23,20 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
+import { FileUploadInterceptor } from 'src/common/interceptors/file-upload.interceptor';
 import { UserRole } from '../user/entities/user.entity';
 import { ExpenseService } from './expense.service';
 import {
   CreateExpenseDto,
   ExpenseIdParam,
+  RejectExpenseDto,
+  SubmitExpenseDto,
   UpdateExpenseDto,
 } from './dto/expense.dto';
 
 // Anyone who sees the money reports sees the costs; recording them is its own
-// permission.
+// permission. Workers allowed to submit expenses send what they paid with a
+// proof, and it waits for someone who records expenses to approve it.
 @ApiTags('Expenses')
 @Controller('expenses')
 @UseGuards(AuthGuard, RolesGuard)
@@ -61,6 +68,59 @@ export class ExpenseController {
   salaries(@User() user: Payload, @Query('companyId') companyId?: string) {
     return this.service.salaries(user, companyId);
   }
+
+  // ---------------- Submitted by workers ----------------
+
+  @Post('submit')
+  @RequirePermissions('expenses.submit')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(new FileUploadInterceptor('picture', 1, false))
+  @ApiOperation({
+    summary: 'Submit an expense paid by a worker, with a receipt photo',
+  })
+  submit(
+    @User() user: Payload,
+    @Body() dto: SubmitExpenseDto,
+    @UploadedFile() picture?: Express.Multer.File,
+  ) {
+    return this.service.submit(user, dto, picture);
+  }
+
+  @Get('mine')
+  @RequirePermissions('expenses.submit')
+  @ApiOperation({
+    summary: 'Expenses I submitted, and whether they were approved',
+  })
+  mine(@User() user: Payload) {
+    return this.service.mine(user);
+  }
+
+  @Delete('mine/:expenseId')
+  @RequirePermissions('expenses.submit')
+  @ApiOperation({ summary: 'Take back a submission not checked yet' })
+  withdraw(@User() user: Payload, @Param() { expenseId }: ExpenseIdParam) {
+    return this.service.withdraw(user, expenseId);
+  }
+
+  @Patch(':expenseId/approve')
+  @RequirePermissions('expenses.manage')
+  @ApiOperation({ summary: 'Approve a submitted expense' })
+  approve(@User() user: Payload, @Param() { expenseId }: ExpenseIdParam) {
+    return this.service.approve(user, expenseId);
+  }
+
+  @Patch(':expenseId/reject')
+  @RequirePermissions('expenses.manage')
+  @ApiOperation({ summary: 'Reject a submitted expense, saying why' })
+  reject(
+    @User() user: Payload,
+    @Param() { expenseId }: ExpenseIdParam,
+    @Body() dto: RejectExpenseDto,
+  ) {
+    return this.service.reject(user, expenseId, dto.note);
+  }
+
+  // ---------------- Recorded by managers ----------------
 
   @Post()
   @RequirePermissions('expenses.manage')
