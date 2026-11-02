@@ -13,6 +13,10 @@ export enum StaffDebtKindEnum {
   OTHER = 'OTHER',
 }
 
+// The `source` of a debt charged for a booking payment reported as not received.
+export const serviceDebtSource = (paymentId: string) =>
+  `service-payment:${paymentId}`;
+
 // Money a worker owes the company. It comes off their salary until paid back.
 @Entity('staff_debts')
 @Index('IDX_staff_debts_source', ['company', 'source'], {

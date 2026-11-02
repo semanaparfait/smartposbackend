@@ -189,6 +189,12 @@ export class PayrollService {
     return this.overview(user);
   }
 
+  // The money it was charged for turned out not to be missing.
+  async removeBySource(user: Payload, source: string) {
+    await this.debtRepo.delete({ source, ...companyWhere(user) });
+    return this.overview(user);
+  }
+
   async removeDebt(user: Payload, id: string) {
     const debt = await this.debtRepo.findOne({
       where: { id, ...companyWhere(user) },

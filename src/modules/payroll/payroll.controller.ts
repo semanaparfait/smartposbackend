@@ -98,6 +98,17 @@ export class PayrollController {
     return this.service.charge(user, dto);
   }
 
+  // Declared before ':debtId' so it isn't read as a debt id.
+  @Delete('by-source')
+  @RequirePermissions('payroll.manage')
+  @ApiOperation({
+    summary: 'Remove the debt charged for something no longer missing',
+  })
+  @ApiQuery({ name: 'source', example: 'count:2026-11-02:<userId>' })
+  removeBySource(@User() user: Payload, @Query('source') source: string) {
+    return this.service.removeBySource(user, source);
+  }
+
   @Delete(':debtId')
   @RequirePermissions('payroll.manage')
   @ApiOperation({ summary: 'Remove a debt charged by mistake' })

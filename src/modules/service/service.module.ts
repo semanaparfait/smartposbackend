@@ -5,6 +5,7 @@ import { ServiceOffering } from './entities/service.entity';
 import { ServiceUnit } from './entities/service-unit.entity';
 import { Booking } from './entities/booking.entity';
 import { BookingPayment } from './entities/booking-payment.entity';
+import { StaffDebt } from '../payroll/entities/staff-debt.entity';
 import { ServiceService } from './service.service';
 import { BookingService } from './booking.service';
 import { ReceiptService } from './receipt.service';
@@ -17,6 +18,7 @@ import { ServiceController } from './service.controller';
       ServiceUnit,
       Booking,
       BookingPayment,
+      StaffDebt,
     ]),
     FileModule,
   ],

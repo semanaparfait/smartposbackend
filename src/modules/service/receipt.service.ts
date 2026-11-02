@@ -13,6 +13,10 @@ import {
   ReceiptStatusEnum,
 } from './entities/booking-payment.entity';
 import { ConfirmReceiptsDto, ReceiptQueryDto } from './dto/receipt.dto';
+import {
+  StaffDebt,
+  serviceDebtSource,
+} from '../payroll/entities/staff-debt.entity';
 
 const person = (user: { id: string; name: string } | null) =>
   user ? { id: user.id, name: user.name } : null;
@@ -134,9 +138,11 @@ export class ReceiptService {
   }
 
   // Only the receipt columns, so a payment is never changed in any other way.
+  // Money no longer missing (undone, or found and confirmed) is no longer owed:
+  // a debt charged to the worker for it is taken away with it.
   private async save(payments: BookingPayment[]) {
     await this.paymentRepo.manager.transaction(async (manager) => {
-      for (const payment of payments)
+      for (const payment of payments) {
         await manager.update(BookingPayment, payment.id, {
           receipt: payment.receipt,
           receiptNote: payment.receiptNote,
@@ -145,6 +151,12 @@ export class ReceiptService {
             ? { id: payment.receiptCheckedBy.id }
             : null,
         });
+
+        if (payment.receipt !== ReceiptStatusEnum.MISSING)
+          await manager.delete(StaffDebt, {
+            source: serviceDebtSource(payment.id),
+          });
+      }
     });
   }
 
