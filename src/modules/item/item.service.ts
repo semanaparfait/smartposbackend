@@ -20,6 +20,18 @@ import { Payload } from 'src/util/token.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { companyWhere, ownRecordsWhere } from 'src/common/utils/company-scope';
 
+// A stock-tracked product can't be sold past what is left.
+function assertInStock(product: Product, quantity: number) {
+  if (!product.trackStock) return;
+  const left = Math.max(0, Number(product.stockQuantity));
+  if (quantity <= left) return;
+  throw new BadRequestException(
+    left === 0
+      ? `${product.name} is out of stock`
+      : `Only ${left} ${product.unit} of ${product.name} in stock`,
+  );
+}
+
 @Injectable()
 export class ItemService {
   constructor(
@@ -149,6 +161,8 @@ export class ItemService {
 
     const existing = cart.items.find((i) => i.product.id === product.id);
 
+    assertInStock(product, (existing?.quantity ?? 0) + quantity);
+
     // Only cart.id is persisted; the company is carried along for the audit log.
     const cartRef = { id: cart.id, company: cart.company } as Cart;
 
@@ -171,6 +185,9 @@ export class ItemService {
   }
 
   private async setQuantity(item: Item, quantity: number) {
+    // Lowering is always allowed, even if stock dropped below what's in the cart.
+    if (quantity > item.quantity) assertInStock(item.product, quantity);
+
     item.quantity = quantity;
     item.totalPrice = Number(item.product.sellingPrice) * quantity;
 
