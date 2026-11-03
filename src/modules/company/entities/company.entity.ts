@@ -51,6 +51,18 @@ export class Company extends BaseEntity {
   @Column({ name: 'max_hold_minutes', type: 'int', default: 60 })
   maxHoldMinutes!: number;
 
+  // Off until the owner turns it on.
+  @Column({ name: 'delivery_enabled', default: false })
+  deliveryEnabled!: boolean;
+
+  // Fee for every delivery, used when no areas are set.
+  @Column({ name: 'delivery_fee', type: 'decimal', scale: 2, default: 0 })
+  deliveryFee!: number;
+
+  // Areas with their own fee, e.g. [{ name: 'Remera', fee: 1500 }].
+  @Column({ name: 'delivery_areas', type: 'jsonb', default: [] })
+  deliveryAreas!: { name: string; fee: number }[];
+
   @OneToMany(() => Employee, (employee) => employee.company)
   employees!: Employee[];
 

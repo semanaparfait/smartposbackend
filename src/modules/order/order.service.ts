@@ -59,12 +59,14 @@ export class OrderService {
   ) {}
 
   async createOrder(dto: CreateOrderDto, repo: EntityManager) {
+    const fee = Number(dto.delivery?.deliveryFee) || 0;
     const order = repo.create(Order, {
+      note: dto.note,
+      ...dto.delivery,
       status: OrderStatusEnum.PENDING,
       subtotal: dto.subtotal,
       tax: dto.tax,
-      total: dto.subtotal + dto.tax,
-      note: dto.note,
+      total: dto.subtotal + dto.tax + fee,
       user: dto.user,
       company: { id: dto.companyId },
     });
@@ -83,6 +85,8 @@ export class OrderService {
         user: { employee: true },
         company: true,
         payments: true,
+        rider: { employee: true },
+        collectedBy: { employee: true },
       },
       order: {
         createdAt: 'DESC',
@@ -196,6 +200,8 @@ export class OrderService {
         user: { employee: true },
         company: true,
         payments: true,
+        rider: { employee: true },
+        collectedBy: { employee: true },
       },
     });
 
@@ -279,7 +285,14 @@ export class OrderService {
       );
   }
 
-  async completeOrder(user: Payload, id: string, dto: CompleteOrderDto) {
+  // `scope` limits which orders the user may pay; a rider paying a delivery at
+  // the door passes {} since they didn't make the order.
+  async completeOrder(
+    user: Payload,
+    id: string,
+    dto: CompleteOrderDto,
+    scope: FindOptionsWhere<Order> = ownRecordsWhere(user),
+  ) {
     if (dto.payments.length > 1) requirePermission(user, 'sales.split_payment');
 
     const credit = dto.payments
@@ -291,7 +304,7 @@ export class OrderService {
       await this.assertCreditLimit(user, credit);
     }
 
-    const order = await this.getOrder(user, id);
+    const order = await this.getOrder(user, id, scope);
 
     // Compare in cents so float rounding can't reject a correct split.
     const paid = dto.payments.reduce((sum, p) => sum + toCents(p.amount), 0);

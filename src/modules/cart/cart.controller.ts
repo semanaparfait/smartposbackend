@@ -26,6 +26,7 @@ import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { CartIdParam } from './dto/request/cart-param.dto';
 import { ExtendHoldDto, HoldCartDto } from './dto/request/hold-cart.dto';
+import { CheckoutDto } from '../order/dto/request/delivery.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 import { DeviceTypes } from 'src/common/decorators/device-types.decorator';
 import { DeviceTypeEnum } from '../device/entities/device.entity';
@@ -70,8 +71,12 @@ export class CartController {
 
   @Patch(':cartId/checkout')
   @ApiOperation({ summary: 'Checkout cart' })
-  async checkout(@User() user: Payload, @Param() { cartId }: CartIdParam) {
-    return await this.service.checkout(user, cartId);
+  async checkout(
+    @User() user: Payload,
+    @Param() { cartId }: CartIdParam,
+    @Body() dto: CheckoutDto,
+  ) {
+    return await this.service.checkout(user, cartId, dto);
   }
 
   @Patch(':cartId/hold')

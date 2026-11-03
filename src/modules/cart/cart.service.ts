@@ -25,6 +25,8 @@ import { ItemService } from '../item/item.service';
 import { UserService } from '../user/user.service';
 import { Payload } from 'src/util/token.service';
 import { ExtendHoldDto, HoldCartDto } from './dto/request/hold-cart.dto';
+import { DeliveryService } from '../order/delivery.service';
+import { CheckoutDto } from '../order/dto/request/delivery.dto';
 import { RealtimeService } from '../realtime/realtime.service';
 import {
   companyWhere,
@@ -49,6 +51,8 @@ export class CartService {
     private readonly userService: UserService,
 
     private readonly realtime: RealtimeService,
+
+    private readonly delivery: DeliveryService,
   ) {}
 
   async createCart(user: Payload, dto: CreateCartDto) {
@@ -121,7 +125,7 @@ export class CartService {
     return cart;
   }
 
-  async checkout(actor: Payload, cartId: string) {
+  async checkout(actor: Payload, cartId: string, dto: CheckoutDto = {}) {
     const order = await this.dataSource.transaction(async (manager) => {
       const user = await this.userService.findOne({ id: actor.sub }, manager);
 
@@ -142,12 +146,17 @@ export class CartService {
       if (cart.items.length <= 0)
         throw new BadRequestException('Cart is Empty');
 
+      const delivery = dto.delivery
+        ? await this.delivery.prepare(manager, cart.company.id, dto.delivery)
+        : undefined;
+
       const order = await this.orderService.createOrder(
         {
           subtotal: Number(cart.totalAmount),
           tax: 0,
           user,
           companyId: cart.company.id,
+          delivery,
         },
         manager,
       );
