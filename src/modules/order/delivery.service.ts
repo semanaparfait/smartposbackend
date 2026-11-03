@@ -85,8 +85,8 @@ export class DeliveryService {
       deliveryStatus: DeliveryStatusEnum.WAITING,
       deliveryFee: fee,
       customerName: dto.customerName,
-      customerPhone: dto.customerPhone,
-      deliveryAddress: dto.address,
+      customerPhone: dto.customerPhone || null,
+      deliveryAddress: dto.address || null,
       deliveryArea: area,
       payOnDelivery: dto.payOnDelivery,
       rider: dto.riderId ? ({ id: dto.riderId } as User) : null,
@@ -147,7 +147,8 @@ export class DeliveryService {
       }));
   }
 
-  // On the road. A paid-now order must be paid first.
+  // On the road. A paid-now order must be paid first. Leaving out who takes it
+  // keeps whoever was set (or nobody).
   async send(user: Payload, id: string, dto: SendDeliveryDto) {
     const order = await this.getForAction(user, id);
 
@@ -169,20 +170,18 @@ export class DeliveryService {
     } else if (dto.outsideRider) {
       order.rider = null;
       order.outsideRider = dto.outsideRider;
-    } else if (!order.rider && !order.outsideRider) {
-      // A rider sending it out takes it themselves.
-      if (!hasPermission(user, 'deliveries.ride'))
-        throw new BadRequestException('Choose who takes it');
-      order.rider = { id: user.sub } as User;
     }
+    // Who takes it is optional: many shops send it with whoever is free and
+    // write it down later, or not at all.
 
     order.deliveryStatus = DeliveryStatusEnum.ON_THE_WAY;
     order.sentAt = new Date();
     return this.saveAndShow(order);
   }
 
-  // The customer has it. Money taken at the door is recorded here, and counts
-  // as the money of whoever took it.
+  // The customer has it, straight from waiting or after being sent. Money taken
+  // at the door is recorded here and counts as the money of whoever took it;
+  // who carried it can be written down now too.
   async delivered(user: Payload, id: string, dto: DeliveredDto) {
     const order = await this.getForAction(user, id);
 
@@ -205,10 +204,24 @@ export class DeliveryService {
       order.collectedBy = { id: user.sub } as User;
     }
 
+    if (dto.riderId)
+      await this.assertRider(
+        this.dataSource.manager,
+        order.company.id,
+        dto.riderId,
+      );
+
     await this.orderRepo.update(id, {
       deliveryStatus: DeliveryStatusEnum.DELIVERED,
       deliveredAt: new Date(),
+      // Off the kitchen screen: the customer has it.
+      kitchenStatus: null,
       ...(order.collectedBy ? { collectedBy: { id: user.sub } } : {}),
+      ...(dto.riderId
+        ? { rider: { id: dto.riderId }, outsideRider: null }
+        : dto.outsideRider
+          ? { rider: null, outsideRider: dto.outsideRider }
+          : {}),
     });
     return this.show(id);
   }
@@ -223,6 +236,7 @@ export class DeliveryService {
 
     order.deliveryStatus = DeliveryStatusEnum.NOT_DELIVERED;
     order.deliveryProblem = dto.reason;
+    order.kitchenStatus = null;
     if (order.status !== OrderStatusEnum.COMPLETED)
       order.status = OrderStatusEnum.CANCELLED;
     return this.saveAndShow(order);
@@ -242,8 +256,9 @@ export class DeliveryService {
       deliveryEnabled: dto.enabled,
       deliveryFee: dto.fee,
       deliveryAreas: areas,
+      deliveryRiders: dto.riders,
     });
-    return { enabled: dto.enabled, fee: dto.fee, areas };
+    return { enabled: dto.enabled, fee: dto.fee, areas, riders: dto.riders };
   }
 
   // ---- helpers ----

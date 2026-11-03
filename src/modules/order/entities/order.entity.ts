@@ -35,6 +35,13 @@ export enum DeliveryStatusEnum {
   NOT_DELIVERED = 'NOT_DELIVERED',
 }
 
+// The kitchen's progress on a delivery paid before its food was ready (once paid,
+// `status` is COMPLETED). null when nothing is left for the kitchen.
+export enum KitchenStatusEnum {
+  PENDING = 'PENDING',
+  PREPARING = 'PREPARING',
+}
+
 @Index('IDX_orders_company_created', ['company', 'createdAt'])
 @Entity('orders')
 export class Order extends BaseEntity {
@@ -162,6 +169,14 @@ export class Order extends BaseEntity {
 
   @Column({ name: 'delivered_at', type: 'timestamptz', nullable: true })
   deliveredAt!: Date | null;
+
+  @Column({
+    name: 'kitchen_status',
+    type: 'enum',
+    enum: KitchenStatusEnum,
+    nullable: true,
+  })
+  kitchenStatus!: KitchenStatusEnum | null;
 
   // Why it couldn't be delivered.
   @Column({ name: 'delivery_problem', type: 'text', nullable: true })

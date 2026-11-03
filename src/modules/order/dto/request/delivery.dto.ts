@@ -29,19 +29,19 @@ export class DeliveryDetailsDto {
   @MaxLength(80)
   customerName!: string;
 
-  @ApiProperty({ example: '0788123456' })
+  @ApiProperty({ required: false, example: '0788123456' })
+  @IsOptional()
   @Transform(trim)
   @IsString()
-  @IsNotEmpty()
   @MaxLength(30)
-  customerPhone!: string;
+  customerPhone?: string;
 
-  @ApiProperty({ example: 'KG 11 Ave, near the market' })
+  @ApiProperty({ required: false, example: 'KG 11 Ave, near the market' })
+  @IsOptional()
   @Transform(trim)
   @IsString()
-  @IsNotEmpty()
   @MaxLength(300)
-  address!: string;
+  address?: string;
 
   @ApiProperty({
     required: false,
@@ -131,6 +131,19 @@ export class DeliveredDto {
   @ValidateNested({ each: true })
   @Type(() => DoorPaymentDto)
   payments?: DoorPaymentDto[];
+
+  // Who took it, when that's only known afterwards (or wasn't set).
+  @ApiProperty({ required: false, description: 'One of the shop riders' })
+  @IsOptional()
+  @IsUUID()
+  riderId?: string;
+
+  @ApiProperty({ required: false, example: 'Moto - Eric 0788...' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  outsideRider?: string;
 }
 
 export class NotDeliveredDto {
@@ -160,6 +173,10 @@ export class DeliverySettingsDto {
   @ApiProperty()
   @IsBoolean()
   enabled!: boolean;
+
+  @ApiProperty({ description: 'The shop has its own riders' })
+  @IsBoolean()
+  riders!: boolean;
 
   @ApiProperty({ description: 'Fee for every delivery when no areas are set' })
   @IsNumber({ maxDecimalPlaces: 2 })

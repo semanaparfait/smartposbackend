@@ -63,6 +63,10 @@ export class Company extends BaseEntity {
   @Column({ name: 'delivery_areas', type: 'jsonb', default: [] })
   deliveryAreas!: { name: string; fee: number }[];
 
+  // The shop has its own riders; otherwise the app doesn't ask who takes it.
+  @Column({ name: 'delivery_riders', default: false })
+  deliveryRiders!: boolean;
+
   @OneToMany(() => Employee, (employee) => employee.company)
   employees!: Employee[];
 

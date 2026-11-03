@@ -9,7 +9,13 @@ import { Employee } from '../employee/entities/employee.entity';
 import { CreateOrderDto } from './dto/request/create-order.dto';
 import { CompleteOrderDto } from './dto/request/complete-order.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Order, OrderStatusEnum } from './entities/order.entity';
+import {
+  DeliveryStatusEnum,
+  KitchenStatusEnum,
+  Order,
+  OrderStatusEnum,
+  OrderTypeEnum,
+} from './entities/order.entity';
 import {
   DataSource,
   EntityManager,
@@ -229,6 +235,10 @@ export class OrderService {
     // waiter's order READY); paying and cancelling stay with its own employee.
     const order = await this.getOrder(user, id, this.viewScope(user));
 
+    // A delivery paid before its food was ready: the kitchen moves its own step.
+    if (order.status === OrderStatusEnum.COMPLETED && order.kitchenStatus)
+      return this.moveKitchenStep(user, order, status);
+
     assertOpen(order);
 
     if (order.status === OrderStatusEnum.SERVED)
@@ -245,6 +255,70 @@ export class OrderService {
     if (becameReady) await this.realtime.orderReady(saved);
 
     return this.onKitchenDisplay(user) ? (kitchenOrder(saved) ?? saved) : saved;
+  }
+
+  private async moveKitchenStep(
+    user: Payload,
+    order: Order,
+    status: OrderStatusEnum,
+  ) {
+    if (status === OrderStatusEnum.READY) {
+      order.kitchenStatus = null;
+    } else if (status === OrderStatusEnum.PREPARING) {
+      order.kitchenStatus = KitchenStatusEnum.PREPARING;
+    } else if (status === OrderStatusEnum.PENDING) {
+      order.kitchenStatus = KitchenStatusEnum.PENDING;
+    } else {
+      throw new BadRequestException('Order is already paid');
+    }
+
+    await this.orderRepo.update(order.id, {
+      kitchenStatus: order.kitchenStatus,
+    });
+    const saved = await this.autoDeliver(order.id);
+    this.realtime.orderUpdated(saved);
+    if (status === OrderStatusEnum.READY) await this.realtime.orderReady(saved);
+
+    return this.onKitchenDisplay(user) ? (kitchenOrder(saved) ?? saved) : saved;
+  }
+
+  // A shop without its own riders delivers as soon as a delivery is paid and its
+  // food (if any) is ready: there is no rider to mark it. Returns the order.
+  async autoDeliver(id: string) {
+    const order = await this.orderRepo.findOneOrFail({
+      where: { id },
+      relations: {
+        items: { product: { images: true } },
+        user: { employee: true },
+        company: true,
+        payments: true,
+        rider: { employee: true },
+        collectedBy: { employee: true },
+      },
+    });
+
+    const kitchenLeft =
+      order.kitchenStatus !== null ||
+      (order.items.some((i) => i.product?.sendToKitchen) &&
+        [OrderStatusEnum.PENDING, OrderStatusEnum.PREPARING].includes(
+          order.status,
+        ));
+
+    if (
+      order.type === OrderTypeEnum.DELIVERY &&
+      order.deliveryStatus === DeliveryStatusEnum.WAITING &&
+      order.status === OrderStatusEnum.COMPLETED &&
+      !order.company.deliveryRiders &&
+      !kitchenLeft
+    ) {
+      order.deliveryStatus = DeliveryStatusEnum.DELIVERED;
+      order.deliveredAt = new Date();
+      await this.orderRepo.update(id, {
+        deliveryStatus: order.deliveryStatus,
+        deliveredAt: order.deliveredAt,
+      });
+    }
+    return order;
   }
 
   // Stops the ready alert. Not limited to the worker's own orders: when they are
@@ -343,6 +417,15 @@ export class OrderService {
         ),
       );
 
+      // A delivery paid before its food is ready keeps the kitchen's step.
+      locked!.kitchenStatus =
+        locked!.type === OrderTypeEnum.DELIVERY &&
+        order.items.some((i) => i.product?.sendToKitchen) &&
+        (locked!.status === OrderStatusEnum.PENDING ||
+          locked!.status === OrderStatusEnum.PREPARING)
+          ? (locked!.status as unknown as KitchenStatusEnum)
+          : null;
+
       // Saved without loaded relations: re-saving `order` (whose payments list is
       // still empty) would unlink the payments just added.
       locked!.status = OrderStatusEnum.COMPLETED;
@@ -353,7 +436,9 @@ export class OrderService {
       return this.stock.recordSale(manager, order, user.sub);
     });
 
-    const completed = await this.getOrder(user, id);
+    // Same scope as above: a rider paying at the door didn't make the order.
+    await this.autoDeliver(id);
+    const completed = await this.getOrder(user, id, scope);
     this.realtime.orderUpdated(completed);
     this.realtime.orderPaid(user.deviceId, completed);
     this.realtime.stockLow(order.company.id, lowStock);
