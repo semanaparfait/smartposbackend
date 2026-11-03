@@ -11,6 +11,7 @@ import {
   DataSource,
   EntityManager,
   FindOptionsWhere,
+  In,
   Repository,
 } from 'typeorm';
 import { Cart, CartStatusEnum } from './entities/cart.entity';
@@ -23,6 +24,7 @@ import { Order } from '../order/entities/order.entity';
 import { ItemService } from '../item/item.service';
 import { UserService } from '../user/user.service';
 import { Payload } from 'src/util/token.service';
+import { ExtendHoldDto, HoldCartDto } from './dto/request/hold-cart.dto';
 import { RealtimeService } from '../realtime/realtime.service';
 import {
   companyWhere,
@@ -172,9 +174,10 @@ export class CartService {
   }
 
   async abandon(user: Payload, cartId: string) {
+    // A held sale can be cancelled too, when the customer doesn't come back.
     const cart = await this.getCart({
       id: cartId,
-      status: CartStatusEnum.ACTIVE,
+      status: In([CartStatusEnum.ACTIVE, CartStatusEnum.HELD]),
       ...companyWhere(user),
       ...ownRecordsWhere(user),
     });
@@ -183,6 +186,91 @@ export class CartService {
     this.realtime.displayCleared(user.deviceId);
 
     return removed;
+  }
+
+  // Puts the sale aside so the till can serve others while the customer fetches
+  // something they forgot.
+  async hold(user: Payload, cartId: string, dto: HoldCartDto) {
+    const cart = await this.getCart({
+      id: cartId,
+      status: CartStatusEnum.ACTIVE,
+      ...companyWhere(user),
+      ...ownRecordsWhere(user),
+    });
+
+    if (cart.items.length === 0) throw new BadRequestException('Cart is Empty');
+
+    const max = cart.company.maxHoldMinutes;
+    if (dto.minutes > max)
+      throw new BadRequestException(
+        `A sale can be held for ${max} minutes at most`,
+      );
+
+    const now = new Date();
+    cart.status = CartStatusEnum.HELD;
+    cart.heldFor = dto.customerName;
+    cart.heldAt = now;
+    cart.holdUntil = new Date(now.getTime() + dto.minutes * 60_000);
+    await this.cartRepo.save(cart);
+    this.realtime.displayCleared(user.deviceId);
+
+    return this.getCartView(cart.id);
+  }
+
+  // The customer is still coming: wait longer, but never past the company's limit
+  // counted from when the sale was first held.
+  async extendHold(user: Payload, cartId: string, dto: ExtendHoldDto) {
+    const cart = await this.getHeldCart(user, cartId);
+    const max = cart.company.maxHoldMinutes;
+    const limit = cart.heldAt!.getTime() + max * 60_000;
+    const from = Math.max(Date.now(), cart.holdUntil!.getTime());
+
+    if (from >= limit)
+      throw new BadRequestException(
+        `A sale can be held for ${max} minutes at most`,
+      );
+
+    cart.holdUntil = new Date(Math.min(from + dto.minutes * 60_000, limit));
+    await this.cartRepo.save(cart);
+
+    return this.getCartView(cart.id);
+  }
+
+  // Back on the till. Only one sale is open at a time, so the current one must be
+  // empty; empty ones are cleared away.
+  async resume(user: Payload, cartId: string) {
+    const cart = await this.getHeldCart(user, cartId);
+
+    const open = await this.cartRepo.find({
+      where: {
+        status: CartStatusEnum.ACTIVE,
+        user: { id: user.sub },
+        ...companyWhere(user),
+      },
+      relations: { items: true },
+    });
+
+    if (open.some((c) => c.items.length > 0))
+      throw new BadRequestException('Finish or hold the current sale first');
+
+    await this.cartRepo.remove(open);
+
+    cart.status = CartStatusEnum.ACTIVE;
+    cart.heldFor = null;
+    cart.heldAt = null;
+    cart.holdUntil = null;
+    await this.cartRepo.save(cart);
+
+    return this.getCartView(cart.id);
+  }
+
+  private getHeldCart(user: Payload, cartId: string) {
+    return this.getCart({
+      id: cartId,
+      status: CartStatusEnum.HELD,
+      ...companyWhere(user),
+      ...ownRecordsWhere(user),
+    });
   }
 
   // One statement instead of loading and re-saving the cart: this runs on every

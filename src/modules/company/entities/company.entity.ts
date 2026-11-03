@@ -47,6 +47,10 @@ export class Company extends BaseEntity {
   @Column({ type: 'enum', enum: CompanyType })
   type!: CompanyType;
 
+  // Longest a sale may stay on hold, set by the owner.
+  @Column({ name: 'max_hold_minutes', type: 'int', default: 60 })
+  maxHoldMinutes!: number;
+
   @OneToMany(() => Employee, (employee) => employee.company)
   employees!: Employee[];
 

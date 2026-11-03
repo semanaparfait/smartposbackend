@@ -1,5 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { CompanyType } from '../../entities/company.entity';
 
 export class CreateCompanyDto {
@@ -33,4 +42,17 @@ export class CreateCompanyDto {
   @ApiProperty({ enum: CompanyType })
   @IsEnum(CompanyType)
   type!: CompanyType;
+
+  @ApiProperty({
+    required: false,
+    minimum: 1,
+    maximum: 240,
+    description: 'Longest a sale may stay on hold, in minutes',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(240)
+  maxHoldMinutes?: number;
 }

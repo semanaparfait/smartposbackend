@@ -25,6 +25,7 @@ import { CreateCartDto } from './dto/request/create-cart.dto';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { CartIdParam } from './dto/request/cart-param.dto';
+import { ExtendHoldDto, HoldCartDto } from './dto/request/hold-cart.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 import { DeviceTypes } from 'src/common/decorators/device-types.decorator';
 import { DeviceTypeEnum } from '../device/entities/device.entity';
@@ -71,6 +72,32 @@ export class CartController {
   @ApiOperation({ summary: 'Checkout cart' })
   async checkout(@User() user: Payload, @Param() { cartId }: CartIdParam) {
     return await this.service.checkout(user, cartId);
+  }
+
+  @Patch(':cartId/hold')
+  @ApiOperation({ summary: 'Hold a sale while the customer is away' })
+  async hold(
+    @User() user: Payload,
+    @Param() { cartId }: CartIdParam,
+    @Body() dto: HoldCartDto,
+  ) {
+    return await this.service.hold(user, cartId, dto);
+  }
+
+  @Patch(':cartId/hold/extend')
+  @ApiOperation({ summary: 'Wait longer for a held sale' })
+  async extendHold(
+    @User() user: Payload,
+    @Param() { cartId }: CartIdParam,
+    @Body() dto: ExtendHoldDto,
+  ) {
+    return await this.service.extendHold(user, cartId, dto);
+  }
+
+  @Patch(':cartId/resume')
+  @ApiOperation({ summary: 'Bring a held sale back to the till' })
+  async resume(@User() user: Payload, @Param() { cartId }: CartIdParam) {
+    return await this.service.resume(user, cartId);
   }
 
   @Delete(':cartId/abandon')

@@ -15,6 +15,8 @@ import { User } from 'src/modules/user/entities/user.entity';
 export enum CartStatusEnum {
   ACTIVE = 'ACTIVE',
   CHECKED_OUT = 'CHECKED_OUT',
+  // Put aside while the customer fetches something; the till can resume it.
+  HELD = 'HELD',
 }
 
 @Index('IDX_carts_company_status', ['company', 'status'])
@@ -50,6 +52,17 @@ export class Cart extends BaseEntity {
   @ManyToOne(() => Seat, (seat) => seat.carts, { nullable: true })
   @JoinColumn({ name: 'seat_id' })
   seat!: Seat;
+
+  // Who the held sale belongs to, as the worker typed it.
+  @Column({ name: 'held_for', type: 'varchar', length: 60, nullable: true })
+  heldFor!: string | null;
+
+  @Column({ name: 'held_at', type: 'timestamptz', nullable: true })
+  heldAt!: Date | null;
+
+  // When the till should ask whether the customer is still coming.
+  @Column({ name: 'hold_until', type: 'timestamptz', nullable: true })
+  holdUntil!: Date | null;
 
   @OneToMany(() => Item, (items) => items.cart)
   items!: Item[];
