@@ -8,7 +8,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Payload } from 'src/util/token.service';
 import { companyWhere, scopeCompanyId } from 'src/common/utils/company-scope';
-import { Employee } from '../employee/entities/employee.entity';
+import { Employee, PayTypeEnum } from '../employee/entities/employee.entity';
+import { DeliveryStatusEnum, Order } from '../order/entities/order.entity';
 import { FileService } from '../file/file.service';
 import { UserRole } from '../user/entities/user.entity';
 import { StaffDebt } from './entities/staff-debt.entity';
@@ -85,6 +86,26 @@ const balance = (debts: StaffDebt[], payments: StaffDebtPayment[]) => {
   };
 };
 
+const thisMonth = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
+// A worker's pay for one month: the salary, or each delivery made times its rate.
+const payFor = (employee: Employee, deliveries: number) =>
+  employee.payType === PayTypeEnum.PER_DELIVERY
+    ? money(deliveries * (Number(employee.perDelivery) || 0))
+    : Number(employee.salary) || 0;
+
+const presentPay = (employee: Employee, deliveries: number) => ({
+  payType: employee.payType,
+  perDelivery:
+    employee.perDelivery === null ? null : Number(employee.perDelivery),
+  // Made this month (or the month being paid), for per-delivery pay.
+  deliveries,
+  salary: payFor(employee, deliveries),
+});
+
 // Salaries and what workers owe the company, which comes off their salary until
 // they pay it back.
 @Injectable()
@@ -128,18 +149,21 @@ export class PayrollService {
       }),
     ]);
 
+    const made = await this.deliveriesMade(employees, thisMonth());
+
     return employees
       .map((employee) => {
         const own = debts.filter((d) => d.employee.id === employee.id);
         const paid = payments.filter((p) => p.employee.id === employee.id);
         const totals = balance(own, paid);
-        const salary = Number(employee.salary) || 0;
+        const pay = presentPay(employee, made.get(employee.id) ?? 0);
+        const salary = pay.salary;
         return {
           employeeId: employee.id,
           userId: employee.user?.id ?? null,
           name: employee.name,
           active: employee.user?.active !== false,
-          salary,
+          ...pay,
           ...totals,
           // What is left of this month's salary after what they owe.
           toPay: money(Math.max(0, salary - totals.owed)),
@@ -153,6 +177,7 @@ export class PayrollService {
       .filter(
         (w) =>
           w.salary > 0 ||
+          w.payType === PayTypeEnum.PER_DELIVERY ||
           w.debts.length ||
           w.payments.length ||
           w.salaryPayments.length,
@@ -246,6 +271,7 @@ export class PayrollService {
   async mine(user: Payload) {
     const employee = await this.employeeRepo.findOne({
       where: { user: { id: user.sub }, ...companyWhere(user) },
+      relations: { user: true },
     });
     if (!employee) return null;
 
@@ -268,10 +294,12 @@ export class PayrollService {
       }),
     ]);
     const totals = balance(debts, payments);
-    const salary = Number(employee.salary) || 0;
+    const made = await this.deliveriesMade([employee], thisMonth());
+    const pay = presentPay(employee, made.get(employee.id) ?? 0);
+    const salary = pay.salary;
 
     return {
-      salary,
+      ...pay,
       ...totals,
       toPay: money(Math.max(0, salary - totals.owed)),
       debts: debts.map(presentDebt),
@@ -358,7 +386,8 @@ export class PayrollService {
         `${employee.name}'s salary for ${dto.month} is already paid`,
       );
 
-    const salary = Number(employee.salary) || 0;
+    const made = await this.deliveriesMade([employee], dto.month);
+    const salary = payFor(employee, made.get(employee.id) ?? 0);
     const { owed } = await this.totalsOf(employee.id);
 
     if (dto.deducted > owed)
@@ -466,6 +495,39 @@ export class PayrollService {
       throw new ForbiddenException(
         'This is your own debt. Someone else has to check it',
       );
+  }
+
+  // Deliveries each worker marked delivered in a month (YYYY-MM), by employee id.
+  private async deliveriesMade(employees: Employee[], month: string) {
+    const riders = employees.filter(
+      (e) => e.payType === PayTypeEnum.PER_DELIVERY && e.user,
+    );
+    const made = new Map<string, number>();
+    if (!riders.length) return made;
+
+    const [year, m] = month.split('-').map(Number);
+    const rows: { rider: string; count: string }[] =
+      await this.employeeRepo.manager
+        .getRepository(Order)
+        .createQueryBuilder('o')
+        .select('o.rider_id', 'rider')
+        .addSelect('COUNT(*)', 'count')
+        .where('o.rider_id IN (:...ids)', { ids: riders.map((e) => e.user.id) })
+        .andWhere('o.delivery_status = :done', {
+          done: DeliveryStatusEnum.DELIVERED,
+        })
+        .andWhere('o.delivered_at >= :from AND o.delivered_at < :to', {
+          from: new Date(year, m - 1, 1),
+          to: new Date(year, m, 1),
+        })
+        .groupBy('o.rider_id')
+        .getRawMany();
+
+    for (const e of riders) {
+      const row = rows.find((r) => r.rider === e.user.id);
+      made.set(e.id, row ? Number(row.count) : 0);
+    }
+    return made;
   }
 
   private async totalsOf(employeeId: string) {

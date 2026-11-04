@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -28,6 +29,7 @@ import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 import { FileUploadInterceptor } from 'src/common/interceptors/file-upload.interceptor';
+import { KitchenSettingsDto } from './dto/request/kitchen-settings.dto';
 
 @ApiTags('Companies')
 @Controller('companies')
@@ -47,6 +49,19 @@ export class CompanyController {
   @ApiOperation({ summary: 'Get all companies' })
   findAll() {
     return this.service.findAll();
+  }
+
+  @Put('kitchen-settings')
+  @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
+  @RequirePermissions('settings.manage')
+  @ApiOperation({
+    summary:
+      'Turn the kitchen screen on or off; on also makes a Kitchen staff role',
+  })
+  saveKitchen(@User() user: Payload, @Body() dto: KitchenSettingsDto) {
+    if (!user.companyId)
+      throw new ForbiddenException('Only a company can turn on its kitchen');
+    return this.service.saveKitchen(user.companyId, dto.enabled);
   }
 
   @Get(':companyId')

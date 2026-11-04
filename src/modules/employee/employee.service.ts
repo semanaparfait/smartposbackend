@@ -10,7 +10,7 @@ import {
 import { CreateEmployeeDto } from './dto/request/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/request/update-employee.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Employee } from './entities/employee.entity';
+import { Employee, PayTypeEnum } from './entities/employee.entity';
 import { EmployeeRole } from './entities/employee-role.entity';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { UpdateEmployeeRoleDto } from './dto/request/update-employee-role.dto';
@@ -29,6 +29,24 @@ import { UpdateEmployeePermissionsDto } from './dto/request/update-employee-perm
 import { Payload } from 'src/util/token.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
+
+// How the worker is paid. Paid per delivery needs the amount, and has no
+// monthly salary.
+const payOf = (dto: { payType?: PayTypeEnum; perDelivery?: number }) => {
+  if (dto.payType !== PayTypeEnum.PER_DELIVERY)
+    return {
+      payType: PayTypeEnum.MONTHLY,
+      perDelivery: null,
+      salary: undefined,
+    };
+  if (!dto.perDelivery || dto.perDelivery <= 0)
+    throw new BadRequestException('Enter how much is paid for each delivery');
+  return {
+    payType: PayTypeEnum.PER_DELIVERY,
+    perDelivery: dto.perDelivery,
+    salary: 0,
+  };
+};
 
 @Injectable()
 export class EmployeeService {
@@ -142,6 +160,7 @@ export class EmployeeService {
 
     const role = await this.getCompanyRole(dto.roleId, company.id);
     assertCanGrant(user, role.permissions);
+    const pay = payOf(dto);
 
     const employee = await this.fileService.createWithImage(picture, () =>
       this.employeeRepo.save(
@@ -149,7 +168,9 @@ export class EmployeeService {
           name: dto.name,
           email: dto.email,
           phone: dto.phone,
-          salary: dto.salary,
+          salary: pay.salary ?? dto.salary,
+          payType: pay.payType,
+          perDelivery: pay.perDelivery,
           shift: dto.shift,
           role: { id: role.id },
           company: { id: company.id },
@@ -214,11 +235,22 @@ export class EmployeeService {
       assertCanGrant(user, employee.role.permissions);
     }
 
+    const pay = payOf({
+      payType: dto.payType ?? employee.payType,
+      perDelivery:
+        dto.perDelivery ??
+        (employee.perDelivery === null
+          ? undefined
+          : Number(employee.perDelivery)),
+    });
+
     Object.assign(employee, {
       name: dto.name ?? employee.name,
       email: dto.email ?? employee.email,
       phone: dto.phone ?? employee.phone,
-      salary: dto.salary ?? employee.salary,
+      salary: pay.salary ?? dto.salary ?? employee.salary,
+      payType: pay.payType,
+      perDelivery: pay.perDelivery,
       shift: dto.shift ?? employee.shift,
     });
 

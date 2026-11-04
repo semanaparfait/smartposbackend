@@ -176,9 +176,52 @@ export class AuthService {
     return await this.userService.updateProfile(userId, dto, picture);
   }
 
+  // Each worker signs in only where they work: a kitchen display is for kitchen
+  // staff and a rider phone for riders; a till is not for them once the shop has
+  // such a device. Owners sign in anywhere but a customer display.
+  private async assertRightDevice(user: User, device: Device) {
+    const permissions = user.employee?.permissions;
+    // null = a role saved without a list, which allows everything.
+    if (!permissions) return;
+    const kitchenStaff = permissions.includes('kitchen.prepare');
+    // Only carries deliveries; riders who also sell may use a till.
+    const rider =
+      permissions.includes('deliveries.ride') &&
+      !permissions.includes('sales.create');
+    const shopHas = (type: DeviceTypeEnum) =>
+      !!user.company &&
+      this.deviceService.hasDeviceOfType(user.company.id, type);
+
+    if (device.type === DeviceTypeEnum.KITCHEN_DISPLAY && !kitchenStaff)
+      throw new ForbiddenException(
+        'This is the kitchen display. Only kitchen staff sign in here',
+      );
+
+    if (
+      device.type === DeviceTypeEnum.RIDER_PHONE &&
+      !permissions.includes('deliveries.ride')
+    )
+      throw new ForbiddenException(
+        'This is a rider phone. Only riders sign in here',
+      );
+
+    if (device.type !== DeviceTypeEnum.POS_TERMINAL) return;
+
+    if (kitchenStaff && (await shopHas(DeviceTypeEnum.KITCHEN_DISPLAY)))
+      throw new ForbiddenException(
+        'Kitchen staff sign in on the kitchen display, not on a till',
+      );
+    if (rider && (await shopHas(DeviceTypeEnum.RIDER_PHONE)))
+      throw new ForbiddenException(
+        'Riders sign in on a rider phone, not on a till',
+      );
+  }
+
   private async openSession(user: User, device?: Device) {
     if (device?.type === DeviceTypeEnum.CUSTOMER_DISPLAY)
       throw new ForbiddenException('Nobody signs in on a customer display');
+    if (device && user.role === UserRole.EMPLOYEE)
+      await this.assertRightDevice(user, device);
 
     await this.userService.touchLastLogin(user.id, new Date());
 

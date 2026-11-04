@@ -15,6 +15,12 @@ import { EmployeeRole } from './employee-role.entity';
 import { File } from 'src/modules/file/entities/file.entity';
 import { effectivePermissions } from 'src/common/permissions/permissions';
 
+// A fixed monthly salary, or an amount for each delivery made (riders).
+export enum PayTypeEnum {
+  MONTHLY = 'MONTHLY',
+  PER_DELIVERY = 'PER_DELIVERY',
+}
+
 export enum ShiftType {
   DAY = 'DAY',
   EVENING = 'EVENING',
@@ -41,6 +47,25 @@ export class Employee extends BaseEntity {
 
   @Column()
   salary!: number;
+
+  @Column({
+    name: 'pay_type',
+    type: 'enum',
+    enum: PayTypeEnum,
+    enumName: 'employees_pay_type_enum',
+    default: PayTypeEnum.MONTHLY,
+  })
+  payType!: PayTypeEnum;
+
+  // Paid for each delivery made, when paid per delivery.
+  @Column({
+    name: 'per_delivery',
+    type: 'decimal',
+    precision: 14,
+    scale: 2,
+    nullable: true,
+  })
+  perDelivery!: number | null;
 
   @ManyToOne(() => EmployeeRole, (role) => role.employees)
   @JoinColumn({ name: 'role_id' })

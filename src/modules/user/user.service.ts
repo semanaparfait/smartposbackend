@@ -377,10 +377,16 @@ export class UserService {
   }
 
   private secretsQuery(where: FindOptionsWhere<User>) {
-    return this.userRepo
-      .createQueryBuilder('user')
-      .setFindOptions({ where, relations: { employee: true, company: true } })
-      .addSelect(['user.password', 'user.pin']);
+    return (
+      this.userRepo
+        .createQueryBuilder('user')
+        // The employee's role gives their permissions, which decide where they may sign in.
+        .setFindOptions({
+          where,
+          relations: { employee: { role: true }, company: true },
+        })
+        .addSelect(['user.password', 'user.pin'])
+    );
   }
 
   // PIN login identifies the employee by PIN alone, so PINs must be unique within a company.

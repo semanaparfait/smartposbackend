@@ -78,6 +78,22 @@ export class DeliveryController {
     return this.service.send(user, orderId, dto);
   }
 
+  @Patch(':orderId/take')
+  @AnyEmployee()
+  @ApiOperation({ summary: 'A rider takes a waiting delivery nobody has' })
+  take(@User() user: Payload, @Param() { orderId }: OrderIdParam) {
+    return this.service.take(user, orderId);
+  }
+
+  @Patch(':orderId/give-back')
+  @AnyEmployee()
+  @ApiOperation({
+    summary: "A rider gives back a delivery they haven't left with",
+  })
+  giveBack(@User() user: Payload, @Param() { orderId }: OrderIdParam) {
+    return this.service.giveBack(user, orderId);
+  }
+
   @Patch(':orderId/delivered')
   @AnyEmployee()
   @ApiOperation({

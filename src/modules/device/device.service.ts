@@ -52,6 +52,17 @@ export class DeviceService {
         `Device is ${device ? device.registrationStatus.toLowerCase() : 'removed'}, please login again`,
       );
   }
+  // Whether the company has an approved device of this type (e.g. a kitchen
+  // display: then kitchen staff sign in there, not on a till).
+  async hasDeviceOfType(companyId: string, type: DeviceTypeEnum) {
+    return this.deviceRepo.exists({
+      where: {
+        company: { id: companyId },
+        type,
+        registrationStatus: RegistrationStatusEnum.REGISTERED,
+      },
+    });
+  }
 
   async verifyDevice(deviceId: string) {
     const device = await this.getOne({

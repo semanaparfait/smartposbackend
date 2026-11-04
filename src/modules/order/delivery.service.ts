@@ -13,6 +13,7 @@ import {
 } from 'src/common/utils/company-scope';
 import { hasPermission } from 'src/common/permissions/permissions';
 import { Company } from '../company/entities/company.entity';
+import { ensureReadyRole, READY_ROLES } from '../employee/ready-roles';
 import { User, UserRole } from '../user/entities/user.entity';
 import { RealtimeService } from '../realtime/realtime.service';
 import {
@@ -38,6 +39,10 @@ const toCents = (amount: number) => Math.round(Number(amount) * 100);
 // (which allow everything) would make every worker a rider.
 const canRide = (permissions: string[] | null | undefined) =>
   (permissions ?? []).includes('deliveries.ride');
+
+// The signed-in worker is one of the shop's riders.
+const isRider = (user: Payload) =>
+  user.role === UserRole.EMPLOYEE && canRide(user.permissions);
 
 @Injectable()
 export class DeliveryService {
@@ -96,7 +101,8 @@ export class DeliveryService {
   }
 
   // Deliveries still on their way or waiting, plus those since `since`.
-  // Managers see all; others the ones they made or carry.
+  // Managers see all; others the ones they made or carry. Riders also see the
+  // waiting ones nobody has taken, so they can pick them.
   async list(user: Payload, since?: string) {
     this.assertCanUse(user);
     const company = scopeCompanyId(user);
@@ -122,7 +128,16 @@ export class DeliveryService {
 
     if (company) query.andWhere('o.company_id = :company', { company });
     if (!hasPermission(user, 'deliveries.manage'))
-      query.andWhere('(o.user_id = :me OR o.rider_id = :me)', { me: user.sub });
+      query.andWhere(
+        isRider(user)
+          ? `(o.user_id = :me OR o.rider_id = :me OR (o.rider_id IS NULL AND o.outside_rider IS NULL AND o.delivery_status = :waiting AND o.status != :cancelled))`
+          : '(o.user_id = :me OR o.rider_id = :me)',
+        {
+          me: user.sub,
+          waiting: DeliveryStatusEnum.WAITING,
+          cancelled: OrderStatusEnum.CANCELLED,
+        },
+      );
 
     return query.getMany();
   }
@@ -176,6 +191,46 @@ export class DeliveryService {
 
     order.deliveryStatus = DeliveryStatusEnum.ON_THE_WAY;
     order.sentAt = new Date();
+    return this.saveAndShow(order);
+  }
+
+  // A rider takes a waiting delivery nobody has. Only one rider gets it when two
+  // tap at the same time.
+  async take(user: Payload, id: string) {
+    if (!isRider(user))
+      throw new ForbiddenException('Only riders can take deliveries');
+    const company = targetCompanyId(user);
+
+    const { affected } = await this.orderRepo
+      .createQueryBuilder()
+      .update(Order)
+      .set({ rider: { id: user.sub } })
+      .where('id = :id', { id })
+      .andWhere('company_id = :company', { company })
+      .andWhere('type = :type', { type: OrderTypeEnum.DELIVERY })
+      .andWhere('delivery_status = :waiting', {
+        waiting: DeliveryStatusEnum.WAITING,
+      })
+      .andWhere('status != :cancelled', {
+        cancelled: OrderStatusEnum.CANCELLED,
+      })
+      .andWhere('rider_id IS NULL AND outside_rider IS NULL')
+      .execute();
+
+    if (!affected)
+      throw new BadRequestException('Another rider already took this delivery');
+    return this.show(id);
+  }
+
+  // A rider gives back a delivery they took but haven't left with.
+  async giveBack(user: Payload, id: string) {
+    const order = await this.getForAction(user, id);
+    if (order.rider?.id !== user.sub)
+      throw new BadRequestException('This delivery is not yours');
+    if (order.deliveryStatus !== DeliveryStatusEnum.WAITING)
+      throw new BadRequestException('You already left with this delivery');
+
+    order.rider = null;
     return this.saveAndShow(order);
   }
 
@@ -258,7 +313,21 @@ export class DeliveryService {
       deliveryAreas: areas,
       deliveryRiders: dto.riders,
     });
-    return { enabled: dto.enabled, fee: dto.fee, areas, riders: dto.riders };
+    const riderRole =
+      dto.enabled && dto.riders
+        ? await ensureReadyRole(
+            this.dataSource.manager,
+            companyId,
+            READY_ROLES.rider,
+          )
+        : null;
+    return {
+      enabled: dto.enabled,
+      fee: dto.fee,
+      areas,
+      riders: dto.riders,
+      riderRole,
+    };
   }
 
   // ---- helpers ----

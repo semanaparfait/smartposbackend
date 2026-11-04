@@ -29,12 +29,15 @@ export enum DeviceTypeEnum {
   // Customer-facing screen paired with a till: shows its cart and payment.
   // Nobody signs in on it.
   CUSTOMER_DISPLAY = 'CUSTOMER_DISPLAY',
+  // A rider's phone: their deliveries only. No selling.
+  RIDER_PHONE = 'RIDER_PHONE',
 }
 
 export const DEVICE_TYPE_LABELS: Record<DeviceTypeEnum, string> = {
   [DeviceTypeEnum.POS_TERMINAL]: 'POS terminal',
   [DeviceTypeEnum.KITCHEN_DISPLAY]: 'kitchen display',
   [DeviceTypeEnum.CUSTOMER_DISPLAY]: 'customer display',
+  [DeviceTypeEnum.RIDER_PHONE]: 'rider phone',
 };
 
 // The code a device shows: its own, else (customer display) its till's.

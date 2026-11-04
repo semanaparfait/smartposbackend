@@ -67,6 +67,10 @@ export class Company extends BaseEntity {
   @Column({ name: 'delivery_riders', default: false })
   deliveryRiders!: boolean;
 
+  // The shop prepares orders on a kitchen screen, with its own kitchen staff.
+  @Column({ name: 'kitchen_enabled', default: false })
+  kitchenEnabled!: boolean;
+
   @OneToMany(() => Employee, (employee) => employee.company)
   employees!: Employee[];
 

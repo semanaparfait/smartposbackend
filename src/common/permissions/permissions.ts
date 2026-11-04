@@ -31,6 +31,8 @@ export const PERMISSIONS: Record<string, string[]> = {
   'expenses.submit': [],
   'payroll.manage': ['reports.view'],
   'credits.view': [],
+  // Kitchen: the kitchen screen reads every order and moves it along.
+  'kitchen.prepare': ['sales.create', 'orders.view_all'],
   // Delivery
   'deliveries.ride': [],
   'deliveries.manage': [],

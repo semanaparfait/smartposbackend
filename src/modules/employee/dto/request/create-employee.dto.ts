@@ -6,8 +6,9 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Min,
 } from 'class-validator';
-import { ShiftType } from '../../entities/employee.entity';
+import { PayTypeEnum, ShiftType } from '../../entities/employee.entity';
 import { Type } from 'class-transformer';
 
 export class CreateEmployeeDto {
@@ -34,6 +35,21 @@ export class CreateEmployeeDto {
   @Type(() => Number)
   @IsNumber()
   salary!: number;
+
+  @ApiProperty({ enum: PayTypeEnum, required: false, default: 'MONTHLY' })
+  @IsOptional()
+  @IsEnum(PayTypeEnum)
+  payType?: PayTypeEnum;
+
+  @ApiProperty({
+    required: false,
+    description: 'Paid for each delivery, when payType is PER_DELIVERY',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  perDelivery?: number;
 
   @ApiProperty({ enum: ShiftType })
   @IsEnum(ShiftType)

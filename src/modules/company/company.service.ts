@@ -8,6 +8,7 @@ import { DeviceActivity } from '../device/entities/device-activity.entity';
 import { AuditLog } from '../audit/entities/audit-log.entity';
 import { Order, OrderStatusEnum } from '../order/entities/order.entity';
 import { FileService } from '../file/file.service';
+import { ensureReadyRole, READY_ROLES } from '../employee/ready-roles';
 
 @Injectable()
 export class CompanyService {
@@ -159,6 +160,15 @@ export class CompanyService {
     if (logo) await this.fileService.deleteByUrl(oldLogo);
 
     return company;
+  }
+
+  // Turning the kitchen screen on also makes a "Kitchen staff" role, ready to give.
+  async saveKitchen(id: string, enabled: boolean) {
+    await this.repo.update(id, { kitchenEnabled: enabled });
+    const kitchenRole = enabled
+      ? await ensureReadyRole(this.repo.manager, id, READY_ROLES.kitchen)
+      : null;
+    return { enabled, kitchenRole };
   }
 
   async remove(id: string) {
