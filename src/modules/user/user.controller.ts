@@ -5,6 +5,7 @@ import {
   Body,
   Param,
   Delete,
+  Patch,
   UseGuards,
 } from '@nestjs/common';
 import { UserService } from './user.service';
@@ -16,6 +17,7 @@ import { UserRole } from './entities/user.entity';
 import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { UserIdParam } from './dto/request/user-param.dto';
+import { AdminUpdateUserDto } from './dto/request/admin-update-user.dto';
 
 @ApiTags('Users')
 @Controller('user')
@@ -41,10 +43,17 @@ export class UserController {
     return this.service.getOne({ id: userId });
   }
 
-  // @Patch(':id')
-  // update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-  //   return this.userService.update(+id, updateUserDto);
-  // }
+  @Patch(':userId')
+  @ApiOperation({ summary: 'Edit an account: name, email, phone, on or off' })
+  update(@Param() { userId }: UserIdParam, @Body() dto: AdminUpdateUserDto) {
+    return this.service.adminUpdate(userId, dto);
+  }
+
+  @Patch(':userId/reset-password')
+  @ApiOperation({ summary: 'Give the account a new password, shown once' })
+  resetPassword(@Param() { userId }: UserIdParam) {
+    return this.service.adminResetPassword(userId);
+  }
 
   @Delete(':userId')
   remove(@Param() { userId }: UserIdParam) {

@@ -1,3 +1,4 @@
+import { Feature } from 'src/common/decorators/feature.decorator';
 import {
   Body,
   Controller,
@@ -27,6 +28,7 @@ import { UpdateFloorMapDto } from './dto/request/update-floor-map.dto';
 import { FloorMapIdParam } from './dto/request/floor-map-param.dto';
 
 @ApiTags('Floor Maps')
+@Feature('floorMap')
 @Controller('floor-maps')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles(UserRole.OWNER)

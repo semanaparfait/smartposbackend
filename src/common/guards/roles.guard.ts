@@ -12,6 +12,9 @@ import { ROLES_KEY } from '../decorators/roles.decorator';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { ANY_EMPLOYEE_KEY } from '../decorators/any-employee.decorator';
 import { DEVICE_TYPES_KEY } from '../decorators/device-types.decorator';
+import { FEATURE_KEY } from '../decorators/feature.decorator';
+import { Company } from 'src/modules/company/entities/company.entity';
+import { FEATURES, FeatureKey, featuresOf } from 'src/modules/company/features';
 import {
   DEVICE_TYPE_LABELS,
   DeviceTypeEnum,
@@ -20,6 +23,10 @@ import {
 
 // Set on the request once the session's device was found usable.
 export const DEVICE_CHECKED = 'deviceChecked';
+
+// What everyone in a terminated company is told.
+export const COMPANY_TERMINATED =
+  'This company is turned off. Contact SmartPOS to turn it back on';
 import { UserRole } from 'src/modules/user/entities/user.entity';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { hasPermission } from '../permissions/permissions';
@@ -60,6 +67,8 @@ export class RolesGuard implements CanActivate {
 
     if (requiredRoles && !requiredRoles.includes(user?.role as UserRole))
       return false;
+
+    await this.assertFeature(context, user);
 
     if (user?.role !== UserRole.EMPLOYEE) return true;
 
@@ -139,5 +148,27 @@ export class RolesGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  // A company the super admin terminated is closed to its owner and employees, and
+  // so is an extra the super admin switched off. Read live, so both apply at once.
+  private async assertFeature(context: ExecutionContext, user?: Payload) {
+    if (!user?.companyId) return;
+    const feature = this.reflector.getAllAndOverride<FeatureKey>(FEATURE_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    const company = await this.dataSource.getRepository(Company).findOne({
+      where: { id: user.companyId },
+      select: { id: true, features: true, active: true },
+    });
+    if (company && company.active === false)
+      throw new UnauthorizedException(COMPANY_TERMINATED);
+    if (!feature) return;
+    if (!featuresOf(company?.features)[feature])
+      throw new ForbiddenException(
+        `${FEATURES[feature]} is not turned on for your company. Contact SmartPOS to add it`,
+      );
   }
 }

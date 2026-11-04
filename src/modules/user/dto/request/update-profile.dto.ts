@@ -35,7 +35,9 @@ export class UpdateProfileDto {
 
   @ApiProperty({ required: false, enum: LANGUAGES })
   @IsOptional()
-  @IsIn(LANGUAGES, { message: 'Choose English, Kinyarwanda, French or Swahili' })
+  @IsIn(LANGUAGES, {
+    message: 'Choose English, Kinyarwanda, French or Swahili',
+  })
   language?: string;
 
   @ApiProperty({

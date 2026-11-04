@@ -12,6 +12,7 @@ import { CompanyModule } from '../company/company.module';
 import { DeviceModule } from '../device/device.module';
 import { EmployeeModule } from '../employee/employee.module';
 import { FileModule } from '../file/file.module';
+import { InboxModule } from '../inbox/inbox.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { FileModule } from '../file/file.module';
     DeviceModule,
     forwardRef(() => EmployeeModule),
     FileModule,
+    InboxModule,
   ],
   controllers: [AuthController, UserController],
   providers: [UserService, AuthService, TokenService, LoginThrottleService],

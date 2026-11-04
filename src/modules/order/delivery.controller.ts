@@ -1,3 +1,4 @@
+import { Feature } from 'src/common/decorators/feature.decorator';
 import {
   Body,
   Controller,
@@ -34,6 +35,7 @@ import {
 // manages deliveries; each only sees the deliveries they made or carry unless
 // they manage deliveries.
 @ApiTags('Deliveries')
+@Feature('delivery')
 @Controller('deliveries')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
@@ -49,15 +51,29 @@ export class DeliveryController {
     required: false,
     description: 'ISO time; start of today if left out',
   })
-  list(@User() user: Payload, @Query('since') since?: string) {
-    return this.service.list(user, since);
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    description: 'Super admin only',
+  })
+  list(
+    @User() user: Payload,
+    @Query('since') since?: string,
+    @Query('companyId') companyId?: string,
+  ) {
+    return this.service.list(user, since, companyId);
   }
 
   @Get('riders')
   @AnyEmployee()
   @ApiOperation({ summary: 'Workers who can carry deliveries' })
-  riders(@User() user: Payload) {
-    return this.service.riders(user);
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    description: 'Super admin only',
+  })
+  riders(@User() user: Payload, @Query('companyId') companyId?: string) {
+    return this.service.riders(user, companyId);
   }
 
   @Put('settings')

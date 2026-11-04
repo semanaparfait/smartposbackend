@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -30,6 +31,9 @@ import { Payload } from 'src/util/token.service';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 import { FileUploadInterceptor } from 'src/common/interceptors/file-upload.interceptor';
 import { KitchenSettingsDto } from './dto/request/kitchen-settings.dto';
+import { CompanyFeaturesDto } from './dto/request/company-features.dto';
+import { CompanyStatusDto } from './dto/request/company-status.dto';
+import { RecordPaymentDto, SetPlanDto } from './dto/request/billing.dto';
 
 @ApiTags('Companies')
 @Controller('companies')
@@ -49,6 +53,70 @@ export class CompanyController {
   @ApiOperation({ summary: 'Get all companies' })
   findAll() {
     return this.service.findAll();
+  }
+
+  @Get('platform-overview')
+  @ApiOperation({
+    summary: 'Totals across every company: sales, users, devices, last 30 days',
+  })
+  platformOverview() {
+    return this.service.platformOverview();
+  }
+
+  @Get(':companyId/billing')
+  @ApiOperation({ summary: 'Subscription: plan, paid until, payments' })
+  billing(@Param() { companyId }: CompanyIdParam) {
+    return this.service.billing(companyId);
+  }
+
+  @Patch(':companyId/billing/plan')
+  @ApiOperation({ summary: 'Choose the plan and its monthly price' })
+  setPlan(@Param() { companyId }: CompanyIdParam, @Body() dto: SetPlanDto) {
+    return this.service.setPlan(companyId, dto);
+  }
+
+  @Post(':companyId/billing/payments')
+  @ApiOperation({ summary: 'Record a subscription payment' })
+  addPayment(
+    @User() user: Payload,
+    @Param() { companyId }: CompanyIdParam,
+    @Body() dto: RecordPaymentDto,
+  ) {
+    return this.service.addPayment(user, companyId, dto);
+  }
+
+  @Delete(':companyId/billing/payments/:paymentId')
+  @ApiOperation({ summary: 'Remove a payment recorded by mistake' })
+  removePayment(
+    @Param() { companyId }: CompanyIdParam,
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+  ) {
+    return this.service.removePayment(companyId, paymentId);
+  }
+
+  // Super admin only (the controller's default role).
+  @Patch(':companyId/features')
+  @ApiOperation({
+    summary: 'Turn extras (services, delivery, floor map, kitchen) on or off',
+  })
+  setFeatures(
+    @Param() { companyId }: CompanyIdParam,
+    @Body() dto: CompanyFeaturesDto,
+  ) {
+    return this.service.setFeatures(companyId, dto);
+  }
+
+  // Super admin only (the controller's default role).
+  @Patch(':companyId/status')
+  @ApiOperation({
+    summary:
+      'Terminate a company (nobody in it can sign in or use SmartPOS) or activate it again',
+  })
+  setStatus(
+    @Param() { companyId }: CompanyIdParam,
+    @Body() dto: CompanyStatusDto,
+  ) {
+    return this.service.setStatus(companyId, dto.active, dto.reason);
   }
 
   @Put('kitchen-settings')

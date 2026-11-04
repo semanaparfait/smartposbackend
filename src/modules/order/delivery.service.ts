@@ -13,6 +13,7 @@ import {
 } from 'src/common/utils/company-scope';
 import { hasPermission } from 'src/common/permissions/permissions';
 import { Company } from '../company/entities/company.entity';
+import { FEATURES, featuresOf } from '../company/features';
 import { ensureReadyRole, READY_ROLES } from '../employee/ready-roles';
 import { User, UserRole } from '../user/entities/user.entity';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -103,9 +104,9 @@ export class DeliveryService {
   // Deliveries still on their way or waiting, plus those since `since`.
   // Managers see all; others the ones they made or carry. Riders also see the
   // waiting ones nobody has taken, so they can pick them.
-  async list(user: Payload, since?: string) {
+  async list(user: Payload, since?: string, companyId?: string) {
     this.assertCanUse(user);
-    const company = scopeCompanyId(user);
+    const company = scopeCompanyId(user, companyId);
     const from = since ? new Date(since) : startOfToday();
 
     const query = this.orderRepo
@@ -143,11 +144,11 @@ export class DeliveryService {
   }
 
   // Workers who can carry deliveries, to pick from.
-  async riders(user: Payload) {
+  async riders(user: Payload, companyId?: string) {
     this.assertCanUse(user);
     const users = await this.dataSource.getRepository(User).find({
       where: {
-        company: { id: targetCompanyId(user) },
+        company: { id: targetCompanyId(user, companyId) },
         role: UserRole.EMPLOYEE,
         active: true,
       },
@@ -306,6 +307,14 @@ export class DeliveryService {
       seen.add(key);
       return true;
     });
+
+    const company = await this.dataSource
+      .getRepository(Company)
+      .findOneOrFail({ where: { id: companyId } });
+    if (dto.enabled && !featuresOf(company.features).delivery)
+      throw new ForbiddenException(
+        `${FEATURES.delivery} is not turned on for your company. Contact SmartPOS to add it`,
+      );
 
     await this.dataSource.getRepository(Company).update(companyId, {
       deliveryEnabled: dto.enabled,

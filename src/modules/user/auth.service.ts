@@ -16,13 +16,22 @@ import { PinLoginDto } from './dto/request/pin-login.dto';
 import { ChangePasswordDto } from './dto/request/change-password.dto';
 import { ChangePinDto } from './dto/request/change-pin.dto';
 import { UpdateProfileDto } from './dto/request/update-profile.dto';
-import { compareHashContent } from 'src/util';
+import { compareHashContent, hashContent } from 'src/util';
+import { MailService } from 'src/common/mail/mail.service';
+import { InboxService } from '../inbox/inbox.service';
+import {
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from './dto/request/password-reset.dto';
+import { randomInt } from 'crypto';
 import { Payload, TokenService } from 'src/util/token.service';
 import { LoginThrottleService } from 'src/util/login-throttle.service';
 import { UserService } from './user.service';
 import { DeviceService } from '../device/device.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { randomUUID } from 'crypto';
+import { FEATURES, featuresOf } from '../company/features';
+import { COMPANY_TERMINATED } from 'src/common/guards/roles.guard';
 
 @Injectable()
 export class AuthService {
@@ -36,6 +45,10 @@ export class AuthService {
     private readonly throttle: LoginThrottleService,
 
     private readonly realtime: RealtimeService,
+
+    private readonly mail: MailService,
+
+    private readonly inbox: InboxService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -65,6 +78,9 @@ export class AuthService {
         throw new UnauthorizedException('User is not assigned to a company');
       }
 
+      if (user.company.active === false)
+        throw new UnauthorizedException(COMPANY_TERMINATED);
+
       if (!dto.deviceId) {
         throw new UnauthorizedException('Device ID is required');
       }
@@ -91,6 +107,9 @@ export class AuthService {
 
     if (!device.company)
       throw new UnauthorizedException('Device is not registered');
+
+    if (device.company.active === false)
+      throw new UnauthorizedException(COMPANY_TERMINATED);
 
     const users = await this.userService.findAllWithSecrets({
       role: UserRole.EMPLOYEE,
@@ -122,6 +141,85 @@ export class AuthService {
       await this.deviceService.recordLogout(user.deviceId, user.sub);
 
     return { message: 'Logged out' };
+  }
+
+  // Forgot password. With email set up, a 6-digit code goes to the address; without
+  // it, the request lands in the super admin's inbox. The reply is the same whether
+  // or not the address has an account, so it can't be used to find accounts.
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const key = `forgot:${dto.email.toLowerCase()}`;
+    this.throttle.assertAllowed(key);
+    this.throttle.recordFailure(key);
+
+    const way = this.mail.enabled ? 'email' : 'support';
+    const user = await this.userService.findForReset(dto.email);
+    if (!user || !user.active) return { way };
+
+    if (!this.mail.enabled) {
+      await this.inbox.passwordHelp({
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+      });
+      return { way };
+    }
+
+    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    await this.userService.setResetCode(
+      user.id,
+      await hashContent(code),
+      new Date(Date.now() + 30 * 60_000),
+    );
+    const sent = await this.mail.send(
+      user.email,
+      'Your SmartPOS password code',
+      `Hello ${user.name},
+
+Your code to set a new SmartPOS password is ${code}. It works for 30 minutes.
+
+If you did not ask for this, ignore this email; your password stays the same.`,
+    );
+    if (!sent) {
+      await this.inbox.passwordHelp({
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+      });
+      return { way: 'support' };
+    }
+    return { way };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const wrong = 'The code is wrong or has expired. Ask for a new one.';
+    const user = await this.userService.findForReset(dto.email);
+    if (
+      !user ||
+      !user.active ||
+      !user.resetCodeHash ||
+      !user.resetCodeExpiresAt ||
+      user.resetCodeExpiresAt.getTime() < Date.now()
+    )
+      throw new BadRequestException(wrong);
+    if (user.resetAttempts >= 5) {
+      await this.userService.setResetCode(user.id, null, null);
+      throw new BadRequestException(wrong);
+    }
+    if (!(await compareHashContent(dto.code, user.resetCodeHash))) {
+      await this.userService.setResetCode(
+        user.id,
+        user.resetCodeHash,
+        user.resetCodeExpiresAt,
+        user.resetAttempts + 1,
+      );
+      throw new BadRequestException(wrong);
+    }
+
+    await this.userService.changePassword(user.id, dto.newPassword);
+    await this.userService.setResetCode(user.id, null, null);
+    this.realtime.revokeUser(user.id, 'Your password was changed');
+    this.throttle.reset(`forgot:${dto.email.toLowerCase()}`);
+    return { message: 'Password changed. You can sign in now.' };
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
@@ -220,6 +318,13 @@ export class AuthService {
   private async openSession(user: User, device?: Device) {
     if (device?.type === DeviceTypeEnum.CUSTOMER_DISPLAY)
       throw new ForbiddenException('Nobody signs in on a customer display');
+    if (
+      device?.type === DeviceTypeEnum.KITCHEN_DISPLAY &&
+      !featuresOf(user.company?.features).kitchen
+    )
+      throw new ForbiddenException(
+        `${FEATURES.kitchen} is not turned on for your company. Contact SmartPOS to add it`,
+      );
     if (device && user.role === UserRole.EMPLOYEE)
       await this.assertRightDevice(user, device);
 

@@ -27,6 +27,7 @@ function isWeakPin(pin: string) {
 }
 
 import { RealtimeService } from '../realtime/realtime.service';
+import { MailService } from 'src/common/mail/mail.service';
 
 @Injectable()
 export class UserService {
@@ -42,6 +43,8 @@ export class UserService {
     private fileService: FileService,
 
     private realtime: RealtimeService,
+
+    private mail: MailService,
   ) {}
 
   async create(dto: CreateUserDto) {
@@ -78,10 +81,20 @@ export class UserService {
     });
     await this.userRepo.save(user);
 
+    // Owners and super admins sign in with email and password: send them the
+    // temporary password when email is set up.
+    const emailed =
+      dto.role !== UserRole.EMPLOYEE &&
+      (await this.mail.send(
+        user.email,
+        'Your SmartPOS account',
+        `Hello ${user.name},\n\nYou can now sign in to SmartPOS${company ? ` for ${company.name}` : ''}.\n\nEmail: ${user.email}\nTemporary password: ${pswd}\n\nSign in${process.env.WEBSITE_URL ? ` at ${process.env.WEBSITE_URL}` : ''} and choose your own password.`,
+      ));
+
     // Returned once so the credentials can be handed to the new user.
     user.password = pswd;
     if (pin) user.pin = pin;
-    return user;
+    return Object.assign(user, { emailed });
   }
 
   async getOne(where: FindOptionsWhere<User>) {
@@ -374,6 +387,98 @@ export class UserService {
     );
 
     return matches.includes(true);
+  }
+
+  // ---- Forgot password ----
+
+  // Who may reset their password by email: signed-in-by-password users only
+  // (owners and super admins); workers use their PIN.
+  findForReset(email: string) {
+    return this.userRepo
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.company', 'company')
+      .addSelect([
+        'user.resetCodeHash',
+        'user.resetCodeExpiresAt',
+        'user.resetAttempts',
+      ])
+      .where('LOWER(user.email) = LOWER(:email)', { email: email.trim() })
+      .andWhere('user.role != :employee', { employee: UserRole.EMPLOYEE })
+      .getOne();
+  }
+
+  // Bookkeeping writes that shouldn't appear in the audit history.
+  async setResetCode(
+    id: string,
+    hash: string | null,
+    expiresAt: Date | null,
+    attempts = 0,
+  ) {
+    await this.userRepo
+      .createQueryBuilder()
+      .update()
+      .set({
+        resetCodeHash: hash,
+        resetCodeExpiresAt: expiresAt,
+        resetAttempts: attempts,
+      })
+      .where('id = :id', { id })
+      .callListeners(false)
+      .execute();
+  }
+
+  // ---- Super admin ----
+
+  // Edit any account. Turning one off signs it out everywhere at once.
+  async adminUpdate(
+    id: string,
+    dto: { name?: string; email?: string; phone?: string; active?: boolean },
+  ) {
+    const user = await this.getOne({ id });
+
+    if (
+      dto.email !== undefined &&
+      dto.email.trim().toLowerCase() !== (user.email ?? '').toLowerCase()
+    ) {
+      if (user.employee)
+        throw new BadRequestException(
+          "A worker's email is changed on their worker page by the company owner",
+        );
+      const taken = await this.userRepo.findOne({
+        where: { email: dto.email.trim() },
+      });
+      if (taken && taken.id !== id)
+        throw new ConflictException('Another account uses this email');
+      user.email = dto.email.trim();
+    }
+    if (dto.name !== undefined) user.name = dto.name.trim();
+    if (dto.phone !== undefined) user.phone = dto.phone.trim();
+    const turnedOff = dto.active === false && user.active;
+    if (dto.active !== undefined) user.active = dto.active;
+
+    await this.userRepo.save(user);
+    if (turnedOff) this.realtime.revokeUser(id, 'Your account was turned off');
+    return this.getOne({ id });
+  }
+
+  // A new password, shown once, to hand to the user. They must change it after
+  // signing in, and every device they were signed in on is signed out.
+  async adminResetPassword(id: string) {
+    const user = await this.getOne({ id });
+    if (user.role === UserRole.EMPLOYEE)
+      throw new BadRequestException(
+        'Workers sign in with a PIN; the owner gives them a new one',
+      );
+    const password = randomBytes(9)
+      .toString('base64')
+      .replace(/[+/=]/g, '')
+      .slice(0, 10);
+    user.password = await hashContent(password);
+    user.mustChangePassword = true;
+    await this.userRepo.save(user);
+    await this.setResetCode(id, null, null);
+    this.realtime.revokeUser(id, 'Your password was reset');
+    return { password };
   }
 
   private secretsQuery(where: FindOptionsWhere<User>) {

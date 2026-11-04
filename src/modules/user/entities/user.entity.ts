@@ -81,6 +81,27 @@ export class User extends BaseEntity {
   })
   sessionId!: string | null;
 
+  // Forgot password: the emailed 6-digit code (hashed), when it stops working,
+  // and how many wrong tries were made. Bookkeeping, never returned.
+  @Column({
+    name: 'reset_code_hash',
+    type: 'varchar',
+    nullable: true,
+    select: false,
+  })
+  resetCodeHash!: string | null;
+
+  @Column({
+    name: 'reset_code_expires_at',
+    type: 'timestamptz',
+    nullable: true,
+    select: false,
+  })
+  resetCodeExpiresAt!: Date | null;
+
+  @Column({ name: 'reset_attempts', type: 'int', default: 0, select: false })
+  resetAttempts!: number;
+
   @OneToMany(() => Order, (orders) => orders.user)
   orders!: Order[];
 

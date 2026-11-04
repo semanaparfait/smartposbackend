@@ -29,6 +29,8 @@ import { ServiceModule } from './modules/service/service.module';
 import { ExpenseModule } from './modules/expense/expense.module';
 import { MoneyCheckModule } from './modules/money-check/money-check.module';
 import { PayrollModule } from './modules/payroll/payroll.module';
+import { MailModule } from './common/mail/mail.service';
+import { InboxModule } from './modules/inbox/inbox.module';
 
 @Module({
   imports: [
@@ -57,6 +59,8 @@ import { PayrollModule } from './modules/payroll/payroll.module';
     PayrollModule,
     FileModule,
     AuditModule,
+    MailModule,
+    InboxModule,
   ],
   // controllers: [AppController],
   providers: [

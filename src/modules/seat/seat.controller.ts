@@ -1,3 +1,4 @@
+import { Feature } from 'src/common/decorators/feature.decorator';
 import {
   Body,
   Controller,
@@ -28,6 +29,7 @@ import { SeatIdParam, SeatStatusParam } from './dto/request/seat-param.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 
 @ApiTags('Seats')
+@Feature('floorMap')
 @Controller('seats')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles(UserRole.OWNER)

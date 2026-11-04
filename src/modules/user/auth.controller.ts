@@ -25,6 +25,10 @@ import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Public } from 'src/common/decorators/public.decorator';
+import {
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from './dto/request/password-reset.dto';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -44,6 +48,22 @@ export class AuthController {
   @ApiOperation({ summary: 'Login with PIN' })
   pinLogin(@Body() dto: PinLoginDto) {
     return this.authService.pinLogin(dto);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @ApiOperation({
+    summary: 'Send a code to set a new password (or ask the SmartPOS team)',
+  })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Set a new password with the emailed code' })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
   }
 
   @Post('logout')

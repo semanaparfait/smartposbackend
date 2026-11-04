@@ -1,3 +1,4 @@
+import { Feature } from 'src/common/decorators/feature.decorator';
 import {
   Body,
   Controller,
@@ -56,6 +57,7 @@ import {
 // Staff with "Services & bookings" run the bookings; "Set up services" (or the
 // owner) changes what is offered and its prices.
 @ApiTags('Services & Bookings')
+@Feature('services')
 @Controller()
 @UseGuards(AuthGuard, RolesGuard)
 @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
