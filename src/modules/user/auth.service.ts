@@ -30,8 +30,12 @@ import { UserService } from './user.service';
 import { DeviceService } from '../device/device.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { randomUUID } from 'crypto';
+import { RefreshTokenService } from './refresh-token.service';
 import { FEATURES, featuresOf } from '../company/features';
 import { COMPANY_TERMINATED } from 'src/common/guards/roles.guard';
+
+// How long a website sign-in key works before it is renewed (WEB_ACCESS_EXPIRY).
+const webAccessExpiry = () => process.env.WEB_ACCESS_EXPIRY || '30m';
 
 @Injectable()
 export class AuthService {
@@ -49,6 +53,8 @@ export class AuthService {
     private readonly mail: MailService,
 
     private readonly inbox: InboxService,
+
+    private readonly refreshTokens: RefreshTokenService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -92,7 +98,48 @@ export class AuthService {
       });
     }
 
-    return this.openSession(user, device);
+    return this.openSession(user, device, dto.client === 'web');
+  }
+
+  // The website's next short sign-in, from its httpOnly cookie. The cookie is
+  // replaced each time; null means sign in again.
+  async refresh(token: string | undefined) {
+    if (!token) return null;
+    const next = await this.refreshTokens.rotate(token);
+    if (!next) return null;
+    const user = await this.userService.findOne({ id: next.userId });
+    if (
+      !user ||
+      !user.active ||
+      user.role === UserRole.EMPLOYEE ||
+      (user.role !== UserRole.SUPERADMIN && user.company?.active === false)
+    ) {
+      await this.refreshTokens.revokeAll(next.userId);
+      return null;
+    }
+    const accessToken = await this.tokenService.generateJWTTokens(
+      {
+        sub: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        companyId: user.company?.id,
+        deviceId: next.deviceId ?? undefined,
+        sid: next.sid,
+      },
+      webAccessExpiry(),
+    );
+    return {
+      accessToken,
+      refreshToken: next.token,
+      mustChangePassword: user.mustChangePassword,
+    };
+  }
+
+  // Ends the website sign-in held in the cookie.
+  async endWebSession(token: string | undefined) {
+    if (token) await this.refreshTokens.revoke(token);
+    return { message: 'Signed out' };
   }
 
   async pinLogin(dto: PinLoginDto) {
@@ -217,6 +264,7 @@ If you did not ask for this, ignore this email; your password stays the same.`,
 
     await this.userService.changePassword(user.id, dto.newPassword);
     await this.userService.setResetCode(user.id, null, null);
+    await this.refreshTokens.revokeAll(user.id);
     this.realtime.revokeUser(user.id, 'Your password was changed');
     this.throttle.reset(`forgot:${dto.email.toLowerCase()}`);
     return { message: 'Password changed. You can sign in now.' };
@@ -235,6 +283,7 @@ If you did not ask for this, ignore this email; your password stays the same.`,
       throw new BadRequestException('New password must be different');
 
     await this.userService.changePassword(userId, dto.newPassword);
+    await this.refreshTokens.revokeAll(userId);
 
     return { message: 'Password changed' };
   }
@@ -315,7 +364,7 @@ If you did not ask for this, ignore this email; your password stays the same.`,
       );
   }
 
-  private async openSession(user: User, device?: Device) {
+  private async openSession(user: User, device?: Device, web = false) {
     if (device?.type === DeviceTypeEnum.CUSTOMER_DISPLAY)
       throw new ForbiddenException('Nobody signs in on a customer display');
     if (
@@ -352,6 +401,18 @@ If you did not ask for this, ignore this email; your password stays the same.`,
       deviceId: device?.id,
       sid,
     };
+
+    // The website gets a short sign-in plus a renewal token for its cookie;
+    // the app keeps its token in the phone's secure storage.
+    if (web)
+      return {
+        accessToken: await this.tokenService.generateJWTTokens(
+          payload,
+          webAccessExpiry(),
+        ),
+        refreshToken: await this.refreshTokens.issue(user.id, sid, device?.id),
+        mustChangePassword: user.mustChangePassword,
+      };
 
     return {
       accessToken: await this.tokenService.generateJWTTokens(payload),

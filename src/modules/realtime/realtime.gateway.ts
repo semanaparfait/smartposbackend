@@ -12,6 +12,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Namespace, Socket } from 'socket.io';
+import { corsOrigin } from 'src/common/security/security';
 import { DataSource } from 'typeorm';
 import {
   Account,
@@ -82,7 +83,7 @@ function terminalRooms(device: TerminalRow) {
 //   signed-in app:  io(`${API_URL}/realtime`, { auth: { token: accessToken } })
 //   terminal:       io(`${API_URL}/realtime`, { auth: { deviceId, deviceSecret } })
 // A refused handshake fails with `connect_error` (error.message says why).
-@WebSocketGateway({ namespace: 'realtime', cors: { origin: '*' } })
+@WebSocketGateway({ namespace: 'realtime', cors: { origin: corsOrigin } })
 export class RealtimeGateway
   implements
     OnGatewayInit,

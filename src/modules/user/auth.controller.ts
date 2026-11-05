@@ -4,6 +4,9 @@ import {
   Get,
   Patch,
   Post,
+  Req,
+  Res,
+  UnauthorizedException,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -25,6 +28,15 @@ import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Public } from 'src/common/decorators/public.decorator';
+import type { Request, Response } from 'express';
+import {
+  REFRESH_COOKIE,
+  clearRefreshCookie,
+  keepRefreshInCookie,
+  readCookie,
+} from './refresh-cookie';
+import { Throttle } from '@nestjs/throttler';
+import { SIGN_IN_LIMIT } from 'src/common/security/security';
 import {
   ForgotPasswordDto,
   ResetPasswordDto,
@@ -37,13 +49,53 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Throttle(SIGN_IN_LIMIT)
   @Post('login')
   @ApiOperation({ summary: 'Login with email and password' })
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const session = await this.authService.login(dto);
+    return keepRefreshInCookie(res, session);
   }
 
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @Post('refresh')
+  @ApiOperation({
+    summary: 'Website: a new short sign-in from the httpOnly cookie',
+  })
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const session = await this.authService.refresh(
+      readCookie(req, REFRESH_COOKIE),
+    );
+    if (!session) {
+      clearRefreshCookie(res);
+      throw new UnauthorizedException('Please sign in again');
+    }
+    return keepRefreshInCookie(res, session);
+  }
+
+  @Public()
+  @Post('session/end')
+  @ApiOperation({ summary: 'Website: sign out and forget the cookie' })
+  async endSession(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.endWebSession(
+      readCookie(req, REFRESH_COOKIE),
+    );
+    clearRefreshCookie(res);
+    return result;
+  }
+
+  @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 40 } })
   @Post('pin-login')
   @ApiOperation({ summary: 'Login with PIN' })
   pinLogin(@Body() dto: PinLoginDto) {
@@ -51,6 +103,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle(SIGN_IN_LIMIT)
   @Post('forgot-password')
   @ApiOperation({
     summary: 'Send a code to set a new password (or ask the SmartPOS team)',
@@ -60,6 +113,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle(SIGN_IN_LIMIT)
   @Post('reset-password')
   @ApiOperation({ summary: 'Set a new password with the emailed code' })
   resetPassword(@Body() dto: ResetPasswordDto) {

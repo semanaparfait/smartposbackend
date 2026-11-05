@@ -5,6 +5,8 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './entities/user.entity';
+import { RefreshToken } from './entities/refresh-token.entity';
+import { RefreshTokenService } from './refresh-token.service';
 import { TokenService } from 'src/util/token.service';
 import { LoginThrottleService } from 'src/util/login-throttle.service';
 import { JwtModule } from '@nestjs/jwt';
@@ -16,7 +18,7 @@ import { InboxModule } from '../inbox/inbox.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, RefreshToken]),
     JwtModule.register({ global: true }),
     CompanyModule,
     DeviceModule,
@@ -25,7 +27,13 @@ import { InboxModule } from '../inbox/inbox.module';
     InboxModule,
   ],
   controllers: [AuthController, UserController],
-  providers: [UserService, AuthService, TokenService, LoginThrottleService],
+  providers: [
+    UserService,
+    AuthService,
+    TokenService,
+    LoginThrottleService,
+    RefreshTokenService,
+  ],
   exports: [UserService],
 })
 export class UserModule {}

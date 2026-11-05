@@ -13,6 +13,8 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Public } from 'src/common/decorators/public.decorator';
+import { Throttle } from '@nestjs/throttler';
+import { PUBLIC_FORM_LIMIT } from 'src/common/security/security';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { User } from 'src/common/decorators/user.decorator';
 import { UserRole } from '../user/entities/user.entity';
@@ -33,6 +35,7 @@ export class InboxController {
   constructor(private readonly service: InboxService) {}
 
   @Public()
+  @Throttle(PUBLIC_FORM_LIMIT)
   @Post('installation-requests')
   @ApiOperation({ summary: 'Website: ask for SmartPOS to be installed' })
   installation(@Body() dto: InstallationRequestDto, @Ip() ip: string) {
@@ -40,6 +43,7 @@ export class InboxController {
   }
 
   @Public()
+  @Throttle(PUBLIC_FORM_LIMIT)
   @Post('contact-messages')
   @ApiOperation({ summary: 'Website: send the SmartPOS team a message' })
   contact(@Body() dto: ContactMessageDto, @Ip() ip: string) {

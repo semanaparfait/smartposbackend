@@ -29,13 +29,14 @@ export class TokenService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async generateJWTTokens(payload: Payload) {
+  // `expiresIn` overrides ACCESS_EXPIRY, e.g. the website's short sign-ins.
+  async generateJWTTokens(payload: Payload, expiresIn?: string) {
     const access = this.config.get(`server.jwt_access`);
     const access_token = await this.jwtService.signAsync(
       { ...payload, type: 'access_token' },
       {
         secret: access.secret,
-        expiresIn: access.expiresIn,
+        expiresIn: expiresIn ?? access.expiresIn,
       },
     );
 

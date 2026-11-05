@@ -1,3 +1,4 @@
+import { OrderQueryDto } from './dto/request/order-query.dto';
 import {
   Controller,
   Get,
@@ -39,14 +40,12 @@ export class OrderController {
   @DeviceTypes(DeviceTypeEnum.POS_TERMINAL, DeviceTypeEnum.KITCHEN_DISPLAY)
   @RequirePermissions('orders.view_own')
   @Roles(UserRole.EMPLOYEE, UserRole.OWNER)
-  @ApiOperation({ summary: 'Get all orders' })
-  @ApiQuery({
-    name: 'companyId',
-    required: false,
-    description: 'Super admin only',
+  @ApiOperation({
+    summary:
+      'Orders: all, or since `from` (plus open ones), or every credit sale',
   })
-  getOrders(@User() user: Payload, @Query('companyId') companyId?: string) {
-    return this.service.getOrders(user, companyId);
+  getOrders(@User() user: Payload, @Query() query: OrderQueryDto) {
+    return this.service.getOrders(user, query.companyId, query);
   }
 
   // Declared before ':orderId' so it isn't read as an order id.

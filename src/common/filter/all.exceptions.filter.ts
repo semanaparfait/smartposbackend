@@ -9,6 +9,7 @@ import {
 import { Request, Response } from 'express';
 import { EntityNotFoundError, QueryFailedError } from 'typeorm';
 import { LoggerService } from '../logger/logger.service';
+import * as Sentry from '@sentry/nestjs';
 
 @Injectable()
 @Catch()
@@ -61,6 +62,13 @@ export class AllExceptionFilter implements ExceptionFilter {
     }
 
     this.logException(exception, request, status);
+    // Server faults go to error tracking; mistakes in requests (4xx) don't.
+    if (status >= 500)
+      Sentry.captureException(exception, {
+        tags: {
+          route: `${request.method} ${request.route?.path ?? request.path}`,
+        },
+      });
 
     response.status(status).json(errorResponse);
   }

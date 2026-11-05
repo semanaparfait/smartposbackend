@@ -16,7 +16,10 @@ import { FloorMapModule } from './modules/floor-map/floor-map.module';
 import serverConfig from './config/server.config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import databaseConfig from './config/database.config';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { SentryModule } from '@sentry/nestjs/setup';
+import { HttpThrottlerGuard, LIMITS } from './common/security/security';
 import { RequestContextInterceptor } from './common/context/request-context.interceptor';
 import { AuditModule } from './modules/audit/audit.module';
 import { AllExceptionFilter } from './common/filter/all.exceptions.filter';
@@ -34,11 +37,13 @@ import { InboxModule } from './modules/inbox/inbox.module';
 
 @Module({
   imports: [
+    SentryModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       load: [serverConfig, cloudinaryConfig],
     }),
     TypeOrmModule.forRootAsync(databaseConfig.asProvider()),
+    ThrottlerModule.forRoot({ throttlers: LIMITS }),
     SeederModule,
     RealtimeModule,
 
@@ -66,6 +71,7 @@ import { InboxModule } from './modules/inbox/inbox.module';
   providers: [
     LoggerService,
     { provide: APP_FILTER, useClass: AllExceptionFilter },
+    { provide: APP_GUARD, useClass: HttpThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: RequestContextInterceptor },
     AppService,
   ],

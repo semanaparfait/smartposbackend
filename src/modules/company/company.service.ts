@@ -66,7 +66,25 @@ export class CompanyService {
 
   // The super admin's dashboard: totals across every company, each company's
   // numbers, and paid sales per day for the last 30 days.
-  async platformOverview() {
+  // The overview adds up every company, so it is kept for 30 seconds: the admin
+  // pages ask for it every minute, from the sidebar, the top bar and the dashboard.
+  private overviewCache: {
+    at: number;
+    data: Promise<Awaited<ReturnType<CompanyService['buildOverview']>>>;
+  } | null = null;
+
+  platformOverview() {
+    const now = Date.now();
+    if (!this.overviewCache || now - this.overviewCache.at > 30_000) {
+      const data = this.buildOverview();
+      this.overviewCache = { at: now, data };
+      // A failure isn't kept.
+      data.catch(() => (this.overviewCache = null));
+    }
+    return this.overviewCache.data;
+  }
+
+  private async buildOverview() {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -273,6 +291,7 @@ export class CompanyService {
   }
 
   async setPlan(companyId: string, dto: SetPlanDto) {
+    this.overviewCache = null;
     const company = await this.getOne({ id: companyId });
     company.plan = dto.plan;
     company.monthlyPrice = String(dto.monthlyPrice);
@@ -288,6 +307,7 @@ export class CompanyService {
   }
 
   async addPayment(user: Payload, companyId: string, dto: RecordPaymentDto) {
+    this.overviewCache = null;
     const company = await this.getOne({ id: companyId });
     if (!company.plan)
       throw new ForbiddenException('Choose a plan for this company first');
@@ -310,6 +330,7 @@ export class CompanyService {
   }
 
   async removePayment(companyId: string, paymentId: string) {
+    this.overviewCache = null;
     const payment = await this.paymentRepo.findOne({
       where: { id: paymentId, company: { id: companyId } },
     });
@@ -462,6 +483,7 @@ export class CompanyService {
   // Switching an extra off also turns off the owner's own setting for it, so the
   // till stops offering it; everyone signed in picks up the change at once.
   async setFeatures(id: string, changes: Partial<CompanyFeatures>) {
+    this.overviewCache = null;
     const company = await this.getOne({ id });
     const features = { ...featuresOf(company.features) };
     for (const key of Object.keys(FEATURES) as (keyof CompanyFeatures)[])
@@ -487,6 +509,7 @@ export class CompanyService {
   // next request, and the realtime event makes open apps check now); activating
   // lets them sign in again. Nothing is deleted.
   async setStatus(id: string, active: boolean, reason?: string) {
+    this.overviewCache = null;
     await this.getOne({ id });
     await this.repo.update(id, {
       active,

@@ -28,6 +28,7 @@ function isWeakPin(pin: string) {
 
 import { RealtimeService } from '../realtime/realtime.service';
 import { MailService } from 'src/common/mail/mail.service';
+import { RefreshTokenService } from './refresh-token.service';
 
 @Injectable()
 export class UserService {
@@ -45,6 +46,8 @@ export class UserService {
     private realtime: RealtimeService,
 
     private mail: MailService,
+
+    private refreshTokens: RefreshTokenService,
   ) {}
 
   async create(dto: CreateUserDto) {
@@ -457,7 +460,10 @@ export class UserService {
     if (dto.active !== undefined) user.active = dto.active;
 
     await this.userRepo.save(user);
-    if (turnedOff) this.realtime.revokeUser(id, 'Your account was turned off');
+    if (turnedOff) {
+      await this.refreshTokens.revokeAll(id);
+      this.realtime.revokeUser(id, 'Your account was turned off');
+    }
     return this.getOne({ id });
   }
 
@@ -477,6 +483,7 @@ export class UserService {
     user.mustChangePassword = true;
     await this.userRepo.save(user);
     await this.setResetCode(id, null, null);
+    await this.refreshTokens.revokeAll(id);
     this.realtime.revokeUser(id, 'Your password was reset');
     return { password };
   }

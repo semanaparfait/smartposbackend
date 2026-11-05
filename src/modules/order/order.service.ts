@@ -21,8 +21,11 @@ import {
   EntityManager,
   FindOptionsWhere,
   In,
+  MoreThanOrEqual,
+  Not,
   Repository,
 } from 'typeorm';
+import { OrderQueryDto } from './dto/request/order-query.dto';
 import { Payload } from 'src/util/token.service';
 import {
   companyWhere,
@@ -83,9 +86,58 @@ export class OrderService {
   // Employees see their own orders, owners their company's, super admin everything.
   // With orders.view_all an employee sees the whole company's orders.
   // A kitchen display only gets what the kitchen makes.
-  async getOrders(user: Payload, companyId?: string) {
+  async getOrders(
+    user: Payload,
+    companyId?: string,
+    query: OrderQueryDto = {},
+  ) {
+    const base: FindOptionsWhere<Order> = {
+      ...companyWhere(user, companyId),
+      ...this.viewScope(user),
+      ...(query.type ? { type: query.type } : {}),
+    };
+
+    let where: FindOptionsWhere<Order> | FindOptionsWhere<Order>[] = base;
+    if (query.credit) {
+      // Credit is owed until paid back, however old the sale: every paid order
+      // with a credit payment (found first, so all its payments still load).
+      const ids = await this.orderRepo
+        .createQueryBuilder('o')
+        .select('o.id', 'id')
+        .innerJoin('o.payments', 'p', 'p.method = :credit', {
+          credit: PaymentMethodEnum.CREDIT,
+        })
+        .where('o.status = :done', { done: OrderStatusEnum.COMPLETED })
+        .andWhere(
+          companyId || user.companyId ? 'o.company_id = :company' : '1=1',
+          { company: companyId ?? user.companyId },
+        )
+        .getRawMany<{ id: string }>();
+      where = {
+        ...base,
+        id: In(
+          ids.length
+            ? ids.map((r) => r.id)
+            : ['00000000-0000-0000-0000-000000000000'],
+        ),
+      };
+    } else if (query.from) {
+      const from = new Date(query.from);
+      // Made or changed (e.g. paid) since `from`, or still open.
+      where = [
+        { ...base, createdAt: MoreThanOrEqual(from) },
+        { ...base, updatedAt: MoreThanOrEqual(from) },
+        {
+          ...base,
+          status: Not(
+            In([OrderStatusEnum.COMPLETED, OrderStatusEnum.CANCELLED]),
+          ),
+        },
+      ];
+    }
+
     const orders = await this.orderRepo.find({
-      where: { ...companyWhere(user, companyId), ...this.viewScope(user) },
+      where,
       relations: {
         items: { product: { images: true } },
         user: { employee: true },

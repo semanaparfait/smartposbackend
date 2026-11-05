@@ -1,3 +1,4 @@
+import { Throttle } from '@nestjs/throttler';
 import {
   Body,
   Controller,
@@ -65,6 +66,7 @@ export class DeviceController {
   }
 
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post('request-registration')
   @ApiOperation({ summary: 'Request registration' })
   request(@Body() dto: CreateDeviceDto) {
