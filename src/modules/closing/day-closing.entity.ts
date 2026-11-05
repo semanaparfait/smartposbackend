@@ -22,6 +22,8 @@ export interface ClosingOrders {
   paid: number;
   paidTotal: number;
   cancelled: number;
+  // Taken that day and still not paid when it closed (they stay open).
+  open?: number;
 }
 
 export interface ClosingStockRow {

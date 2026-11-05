@@ -1,10 +1,18 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Not, Repository } from 'typeorm';
+import {
+  DataSource,
+  In,
+  LessThan,
+  MoreThanOrEqual,
+  Not,
+  Repository,
+} from 'typeorm';
 import { Payload } from 'src/util/token.service';
 import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
 import { Order, OrderStatusEnum } from '../order/entities/order.entity';
@@ -77,8 +85,9 @@ export class ClosingService {
     return row;
   }
 
-  // Everything the closing screen shows before anyone counts: open orders (which
-  // block closing), the money each method should hold, and each product's stock.
+  // Everything the closing screen shows before anyone counts: today's open
+  // orders (a reminder, they don't block), the money each method should hold,
+  // and each product's stock.
   async preview(user: Payload) {
     const companyId = targetCompanyId(user);
     return this.build(companyId, new Date());
@@ -89,9 +98,10 @@ export class ClosingService {
     const now = new Date();
     const view = await this.build(companyId, now);
 
-    if (view.openOrders.length)
+    // One closing per day, so nothing is counted twice.
+    if (view.alreadyClosed)
       throw new ConflictException(
-        `${view.openOrders.length} order(s) are still open. Take payment or cancel them before closing the day.`,
+        `Today was already closed by ${view.alreadyClosed.closedByName}.`,
       );
 
     const counts = new Map(dto.stock.map((s) => [s.productId, s.counted]));
@@ -125,6 +135,14 @@ export class ClosingService {
           view.money.expected.MOMO +
           view.money.expected.CARD),
     };
+
+    // Money that doesn't match needs an explanation for the owners.
+    if (Math.round(money.difference) !== 0 && !dto.note?.trim())
+      throw new BadRequestException(
+        money.difference < 0
+          ? `${rwf(-money.difference)} is missing. Write a note saying why before closing.`
+          : `There is ${rwf(money.difference)} more than expected. Write a note saying why before closing.`,
+      );
 
     const closer = await this.dataSource.getRepository(User).findOne({
       where: { id: user.sub },
@@ -196,17 +214,22 @@ export class ClosingService {
       },
     );
 
+    const stillOpen = c.orders.open
+      ? ` · ${c.orders.open} order${c.orders.open === 1 ? '' : 's'} not paid yet`
+      : '';
     await this.push.notifyCompany(companyId, undefined, {
       title: `Day closed: ${sales} in sales`,
-      body: `${day} · Money ${moneyLine} · Stock ${stockLine}. Closed by ${c.closedByName}.`,
+      body: `${day} · Money ${moneyLine} · Stock ${stockLine}${stillOpen}. Closed by ${c.closedByName}.${c.note ? ` Note: ${c.note}` : ''}`,
       screen: 'day-closing',
       data: { closingId: c.id },
     });
     await this.push.whatsappOwners(companyId, 'smartpos_day_summary', [
       day,
-      sales,
+      c.orders.open
+        ? `${sales} (${c.orders.open} order${c.orders.open === 1 ? '' : 's'} not paid yet)`
+        : sales,
       String(c.orders.paid),
-      moneyLine,
+      c.note ? `${moneyLine} (note: ${c.note})` : moneyLine,
       stockLine,
       c.closedByName,
     ]);
@@ -215,13 +238,13 @@ export class ClosingService {
   // ---- Working it out ----
 
   private async build(companyId: string, now: Date) {
-    const last = await this.repo.findOne({
-      where: { company: { id: companyId } },
+    // The day itself: from midnight (Kigali) until now.
+    const from = startOfKigaliDay(now);
+    const businessDay = kigaliDay(now);
+    const closedToday = await this.repo.findOne({
+      where: { company: { id: companyId }, businessDay },
       order: { closedAt: 'DESC' },
     });
-    // Since the last closing; the first one starts at midnight today.
-    const from = last?.closedAt ?? startOfKigaliDay(now);
-    const businessDay = kigaliDay(now);
     const m = this.dataSource.manager;
 
     const [
@@ -233,12 +256,14 @@ export class ClosingService {
       products,
       moves,
     ] = await Promise.all([
+      // Orders taken today and not paid yet (e.g. a customer paying later).
       m.getRepository(Order).find({
         where: {
           company: { id: companyId },
           status: Not(
             In([OrderStatusEnum.COMPLETED, OrderStatusEnum.CANCELLED]),
           ),
+          createdAt: MoreThanOrEqual(from),
         },
         relations: { user: { employee: true } },
         order: { createdAt: 'ASC' },
@@ -387,7 +412,23 @@ export class ClosingService {
       businessDay,
       from,
       to: now,
-      lastClosedAt: last?.closedAt ?? null,
+      alreadyClosed: closedToday
+        ? {
+            id: closedToday.id,
+            closedAt: closedToday.closedAt,
+            closedByName: closedToday.closedByName,
+          }
+        : null,
+      // Open orders from before today: not part of this day.
+      olderOpenOrders: await m.getRepository(Order).count({
+        where: {
+          company: { id: companyId },
+          status: Not(
+            In([OrderStatusEnum.COMPLETED, OrderStatusEnum.CANCELLED]),
+          ),
+          createdAt: LessThan(from),
+        },
+      }),
       openOrders: openOrders.map((o) => ({
         id: o.id,
         createdAt: o.createdAt,
@@ -408,6 +449,7 @@ export class ClosingService {
         paid: paidOrders,
         paidTotal: salesTotal,
         cancelled: cancelledCount,
+        open: openOrders.length,
       },
       moneyChecks: {
         verified: checks.filter(
