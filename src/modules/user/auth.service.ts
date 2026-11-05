@@ -18,6 +18,7 @@ import { ChangePinDto } from './dto/request/change-pin.dto';
 import { UpdateProfileDto } from './dto/request/update-profile.dto';
 import { compareHashContent, hashContent } from 'src/util';
 import { MailService } from 'src/common/mail/mail.service';
+import { passwordCodeEmail } from 'src/common/mail/templates';
 import { InboxService } from '../inbox/inbox.service';
 import {
   ForgotPasswordDto,
@@ -217,14 +218,12 @@ export class AuthService {
       await hashContent(code),
       new Date(Date.now() + 30 * 60_000),
     );
+    const email = passwordCodeEmail(user.name, code, 30);
     const sent = await this.mail.send(
       user.email,
-      'Your SmartPOS password code',
-      `Hello ${user.name},
-
-Your code to set a new SmartPOS password is ${code}. It works for 30 minutes.
-
-If you did not ask for this, ignore this email; your password stays the same.`,
+      `${code} is your SmartPOS password code`,
+      email.text,
+      email.html,
     );
     if (!sent) {
       await this.inbox.passwordHelp({

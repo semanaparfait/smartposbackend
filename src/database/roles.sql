@@ -7,7 +7,10 @@
 --   PROD_MIGRATION_DATABASE_URL = the owner  (only for `npm run migration:run`)
 --   MIGRATIONS_RUN=off          (the server no longer changes tables itself)
 
-CREATE ROLE smartpos_app LOGIN PASSWORD 'change-me-to-a-long-random-password';
+-- Neon: create the user in the Neon Console instead (Roles & Databases, then
+-- Add role "smartpos_app"); it makes a strong password for you. Elsewhere,
+-- remove the two dashes below and set a long random password.
+-- CREATE ROLE smartpos_app LOGIN PASSWORD 'change-me-to-a-long-random-password';
 
 DO $$ BEGIN
   EXECUTE format('GRANT CONNECT ON DATABASE %I TO smartpos_app', current_database());

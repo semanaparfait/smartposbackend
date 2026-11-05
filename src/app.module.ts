@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
+import { SystemController } from './system.controller';
 import { AppService } from './app.service';
 import { EmployeeModule } from './modules/employee/employee.module';
 import { CompanyModule } from './modules/company/company.module';
@@ -68,6 +69,7 @@ import { InboxModule } from './modules/inbox/inbox.module';
     InboxModule,
   ],
   // controllers: [AppController],
+  controllers: [SystemController],
   providers: [
     LoggerService,
     { provide: APP_FILTER, useClass: AllExceptionFilter },

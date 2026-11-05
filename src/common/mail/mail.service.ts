@@ -37,10 +37,22 @@ export class MailService {
 
   // True when the message went out. Failures are logged, never thrown, so a
   // broken mail server can't break the request that sends the mail.
-  async send(to: string, subject: string, text: string): Promise<boolean> {
+  // `html` is the designed version; mail apps that can't show it use `text`.
+  async send(
+    to: string,
+    subject: string,
+    text: string,
+    html?: string,
+  ): Promise<boolean> {
     if (!this.transport) return false;
     try {
-      await this.transport.sendMail({ from: this.from, to, subject, text });
+      await this.transport.sendMail({
+        from: this.from,
+        to,
+        subject,
+        text,
+        html,
+      });
       return true;
     } catch (error) {
       this.logger.error(
