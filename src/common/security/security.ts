@@ -12,13 +12,25 @@ const allowList = () =>
     .map((o) => o.trim().replace(/\/$/, ''))
     .filter(Boolean);
 
+// The SmartPOS desktop app (Electron) loads itself from this address.
+const DESKTOP_APP = 'app://smartpos';
+
+// While developing: the website, the app's web version (Expo, port 8081) and
+// phones on the same Wi-Fi, on any port.
+const LOCAL =
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/;
+
+// The phone app sends no Origin and the desktop app is always allowed.
 // Without CORS_ORIGINS every website may call the API during development;
 // in production only the listed ones can.
 export function originAllowed(origin: string | undefined) {
   if (!origin) return true;
+  const clean = origin.replace(/\/$/, '');
+  if (clean === DESKTOP_APP) return true;
+  if (!isProduction() && LOCAL.test(clean)) return true;
   const list = allowList();
   if (!list.length) return !isProduction();
-  return list.includes(origin.replace(/\/$/, ''));
+  return list.includes(clean);
 }
 
 // For Express' cors and socket.io: (origin, callback) => allowed or not.
