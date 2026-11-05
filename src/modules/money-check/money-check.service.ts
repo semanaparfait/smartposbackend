@@ -1,10 +1,14 @@
+import { PushService } from '../notifications/push.service';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, FindOptionsWhere, Repository } from 'typeorm';
 import { Payload } from 'src/util/token.service';
 import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
 import { User } from '../user/entities/user.entity';
-import { MoneyCheck } from './entities/money-check.entity';
+import {
+  MoneyCheck,
+  MoneyCheckStatusEnum,
+} from './entities/money-check.entity';
 import { SaveMoneyCheckDto } from './dto/money-check.dto';
 
 @Injectable()
@@ -14,6 +18,7 @@ export class MoneyCheckService {
     private readonly repo: Repository<MoneyCheck>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    private readonly push: PushService,
   ) {}
 
   // Checks for the company, optionally only between two days (inclusive).
@@ -36,6 +41,7 @@ export class MoneyCheckService {
     const [worker, decider, existing] = await Promise.all([
       this.userRepo.findOne({
         where: { id: dto.userId, company: { id: companyId } },
+        relations: { employee: true },
       }),
       this.userRepo.findOne({
         where: { id: user.sub },
@@ -69,7 +75,29 @@ export class MoneyCheckService {
         'Unknown',
     });
 
+    const wasFlagged = existing?.status === MoneyCheckStatusEnum.FLAGGED;
     const saved = await this.repo.save(check);
+    // A new flag: whoever checks money hears at once.
+    if (saved.status === MoneyCheckStatusEnum.FLAGGED && !wasFlagged) {
+      const short = -Number(saved.difference);
+      void this.push.notifyCompany(companyId, 'finance.verify', {
+        title: `Money check flagged: ${worker.employee?.name ?? worker.name}`,
+        body:
+          short > 0
+            ? `${Math.round(short).toLocaleString('en-US')} RWF short on ${saved.date}. Checked by ${saved.decidedByName}.`
+            : `Flagged for ${saved.date} by ${saved.decidedByName}.`,
+        screen: 'money-checks',
+        data: { date: saved.date, userId: worker.id },
+      });
+      void this.push.whatsappOwners(companyId, 'smartpos_money_flagged', [
+        worker.employee?.name ?? worker.name,
+        saved.date,
+        short > 0
+          ? `${Math.round(short).toLocaleString('en-US')} RWF short`
+          : saved.note || 'see SmartPOS',
+        saved.decidedByName,
+      ]);
+    }
     return this.repo.findOneOrFail({
       where: { id: saved.id },
       relations: { worker: true },

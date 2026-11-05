@@ -76,6 +76,10 @@ export class Booking extends BaseEntity {
   @Column({ name: 'checked_in_at', type: 'timestamptz', nullable: true })
   checkedInAt!: Date | null;
 
+  // When the service desk was told it starts soon (phone notification).
+  @Column({ name: 'reminded_at', type: 'timestamptz', nullable: true })
+  remindedAt!: Date | null;
+
   @Column({ name: 'checked_out_at', type: 'timestamptz', nullable: true })
   checkedOutAt!: Date | null;
 

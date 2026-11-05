@@ -34,7 +34,10 @@ import { ExpenseModule } from './modules/expense/expense.module';
 import { MoneyCheckModule } from './modules/money-check/money-check.module';
 import { PayrollModule } from './modules/payroll/payroll.module';
 import { MailModule } from './common/mail/mail.service';
+import { WhatsAppModule } from './common/whatsapp/whatsapp.service';
 import { InboxModule } from './modules/inbox/inbox.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { ClosingModule } from './modules/closing/closing.module';
 
 @Module({
   imports: [
@@ -66,7 +69,10 @@ import { InboxModule } from './modules/inbox/inbox.module';
     FileModule,
     AuditModule,
     MailModule,
+    WhatsAppModule,
     InboxModule,
+    NotificationsModule,
+    ClosingModule,
   ],
   // controllers: [AppController],
   controllers: [SystemController],

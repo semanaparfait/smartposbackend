@@ -114,6 +114,10 @@ export class Company extends BaseEntity {
   @Column({ name: 'billing_note', type: 'text', nullable: true })
   billingNote!: string | null;
 
+  // Last day the owners were reminded the subscription ends or is overdue.
+  @Column({ name: 'billing_reminded_on', type: 'date', nullable: true })
+  billingRemindedOn!: string | null;
+
   // Extras the super admin turned on for this company (see features.ts).
   @Column({ type: 'jsonb', default: () => `'${JSON.stringify(NO_FEATURES)}'` })
   features!: CompanyFeatures;

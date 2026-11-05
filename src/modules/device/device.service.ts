@@ -18,6 +18,7 @@ import { CreateDeviceDto } from './dto/request/create-device.dto';
 import { CompanyService } from '../company/company.service';
 import { User, UserRole } from '../user/entities/user.entity';
 import { RealtimeService } from '../realtime/realtime.service';
+import { PushService } from '../notifications/push.service';
 import {
   deviceSecretMatches,
   hashDeviceSecret,
@@ -38,6 +39,8 @@ export class DeviceService {
     private readonly companyService: CompanyService,
 
     private readonly realtime: RealtimeService,
+
+    private readonly push: PushService,
   ) {}
 
   // Sessions opened on a device only work while it stays registered. `id` is Device.id.
@@ -239,6 +242,15 @@ export class DeviceService {
     const { secretHash: _secretHash, ...result } = device;
 
     this.realtime.deviceRequested(result as Device);
+    void this.push.notifyCompany(company.id, 'devices.manage', {
+      title: 'A new device wants to join',
+      body: `${dto.deviceName} (${dto.deviceOs}) is waiting for your approval.`,
+      screen: 'devices',
+      data: { deviceId: device.id },
+    });
+    void this.push.whatsappOwners(company.id, 'smartpos_device_request', [
+      `${dto.deviceName} (${dto.deviceOs})`,
+    ]);
 
     // Returned only once: the terminal must store it and send it with heartbeats.
     return { ...result, deviceSecret: secret };
