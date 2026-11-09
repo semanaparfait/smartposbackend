@@ -16,6 +16,14 @@ import { VenueEvent } from './venue.events';
 import { VenueLayout, VenueTable } from './venue.entity';
 import { SaveLayoutDto, UpdateTableDto } from './venue.dto';
 
+// What a seat is called on orders and receipts, by its type on the map.
+const KIND: Record<string, string> = {
+  'bar-stool': 'Bar stool',
+  armchair: 'Lounge chair',
+  booth: 'Booth',
+  'high-table': 'High table',
+};
+
 // The order summary shown on a table, without loading all its items.
 export interface TableOrder {
   id: string;
@@ -124,6 +132,7 @@ export class VenueService {
       });
 
     const before = row.status;
+    const orderBefore = row.orderId;
 
     // One worker serves a taken table; only they or an owner change it.
     if (
@@ -197,11 +206,85 @@ export class VenueService {
     if (row.status !== before || !row.id) row.since = new Date();
 
     row = await this.tables.save(row);
+
+    // The order remembers where it is served (for the kitchen, lists and receipts).
+    if (row.orderId && row.orderId !== orderBefore)
+      await this.stampOrder(company, row.orderId, tableId);
+    else if (dto.orderId === null && orderBefore)
+      await this.stampOrder(company, orderBefore, null);
+
     const orders = await this.ordersOf([row]);
     const view = this.view(row, orders);
 
     this.realtime.toStaff(company, VenueEvent.TABLE_UPDATED, view);
     return view;
+  }
+
+  // Writes the table or seat on the order (null clears it) and tells everyone
+  // who sees orders.
+  private async stampOrder(
+    companyId: string,
+    orderId: string,
+    tableId: string | null,
+  ) {
+    const place = tableId ? await this.placeOf(companyId, tableId) : null;
+    await this.orders.update(orderId, {
+      tableId,
+      tableName: place?.name ?? null,
+      tableKind: place?.kind ?? null,
+      tableArea: place?.area ?? null,
+    });
+    const order = await this.orders.findOne({
+      where: { id: orderId },
+      relations: {
+        items: { product: { images: true } },
+        user: { employee: true },
+        company: true,
+        payments: true,
+        rider: { employee: true },
+        collectedBy: { employee: true },
+      },
+    });
+    if (order) this.realtime.orderUpdated(order);
+  }
+
+  // The table's name, what it is and the room it stands in, from the saved map.
+  private async placeOf(companyId: string, tableId: string) {
+    const saved = await this.layouts.findOne({
+      where: { company: { id: companyId } },
+    });
+    type Box = { x: number; y: number; w: number; h: number };
+    type MapItem = Box & { id: string; type: string; label?: string };
+    type MapFloor = {
+      name?: string;
+      items?: MapItem[];
+      rooms?: (Box & { name?: string })[];
+    };
+    const floors = (saved?.layout as { floors?: MapFloor[] })?.floors ?? [];
+    for (const floor of floors) {
+      const item = floor.items?.find((i) => i.id === tableId);
+      if (!item) continue;
+      const cx = item.x + item.w / 2;
+      const cy = item.y + item.h / 2;
+      const room = floor.rooms?.find(
+        (r) =>
+          r.name &&
+          cx >= r.x &&
+          cx <= r.x + r.w &&
+          cy >= r.y &&
+          cy <= r.y + r.h,
+      );
+      return {
+        name: (item.label || '').slice(0, 40) || null,
+        kind: KIND[item.type] ?? 'Table',
+        area:
+          (room?.name || (floors.length > 1 ? floor.name : '') || '').slice(
+            0,
+            80,
+          ) || null,
+      };
+    }
+    return null;
   }
 
   private async ordersOf(rows: VenueTable[]) {

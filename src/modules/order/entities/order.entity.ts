@@ -79,6 +79,21 @@ export class Order extends BaseEntity {
   @Column({ nullable: true })
   note!: string;
 
+  // Where it is served, from the floor map: the table or seat ("T04", "S03"),
+  // what it is ("Table", "Bar stool") and its area ("Restaurant"). Kept after
+  // the table is free again, for receipts and history.
+  @Column({ name: 'table_id', type: 'varchar', length: 64, nullable: true })
+  tableId!: string | null;
+
+  @Column({ name: 'table_name', type: 'varchar', length: 40, nullable: true })
+  tableName!: string | null;
+
+  @Column({ name: 'table_kind', type: 'varchar', length: 40, nullable: true })
+  tableKind!: string | null;
+
+  @Column({ name: 'table_area', type: 'varchar', length: 80, nullable: true })
+  tableArea!: string | null;
+
   @OneToMany(() => Item, (items) => items.order)
   items!: Item[];
 
