@@ -157,6 +157,12 @@ export class RealtimeService {
     return rows.map((r) => r.id);
   }
 
+  // Everyone signed in at the company except kitchen displays (e.g. the floor
+  // map and its tables, see VenueEvent).
+  toStaff(companyId: string, event: string, payload: unknown) {
+    this.gateway.emitToStaff(companyId, event, payload);
+  }
+
   stockLow(companyId: string, products: LowStockProduct[]) {
     if (products.length)
       this.gateway.emit(

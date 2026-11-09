@@ -86,6 +86,13 @@ export class CheckoutDto {
   @ValidateNested()
   @Type(() => DeliveryDetailsDto)
   delivery?: DeliveryDetailsDto;
+
+  // Adds the cart to this open order instead of making a new one (more food
+  // for a table that is still being served).
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsUUID()
+  orderId?: string;
 }
 
 export class SendDeliveryDto {

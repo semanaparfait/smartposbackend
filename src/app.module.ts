@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { SystemController } from './system.controller';
 import { AppService } from './app.service';
@@ -38,6 +38,7 @@ import { WhatsAppModule } from './common/whatsapp/whatsapp.service';
 import { InboxModule } from './modules/inbox/inbox.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ClosingModule } from './modules/closing/closing.module';
+import { VenueModule } from './modules/venue/venue.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { ClosingModule } from './modules/closing/closing.module';
     InboxModule,
     NotificationsModule,
     ClosingModule,
+    VenueModule,
   ],
   // controllers: [AppController],
   controllers: [SystemController],

@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   ParseIntPipe,
+  ParseUUIDPipe,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -24,6 +25,7 @@ import { User } from 'src/common/decorators/user.decorator';
 import { Payload } from 'src/util/token.service';
 import { OrderIdParam } from './dto/request/order-param.dto';
 import { CompleteOrderDto } from './dto/request/complete-order.dto';
+import { ChangeItemQuantityDto } from './dto/request/change-item.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 import { DeviceTypes } from 'src/common/decorators/device-types.decorator';
 import { DeviceTypeEnum } from '../device/entities/device.entity';
@@ -113,6 +115,22 @@ export class OrderController {
     @Body() dto: CompleteOrderDto,
   ) {
     return this.service.completeOrder(user, orderId, dto);
+  }
+
+  @Patch(':orderId/items/:itemId')
+  @DeviceTypes(DeviceTypeEnum.POS_TERMINAL)
+  @RequirePermissions('sales.create')
+  @Roles(UserRole.EMPLOYEE, UserRole.OWNER)
+  @ApiOperation({
+    summary: 'Fewer of one item on an unpaid order; 0 removes it',
+  })
+  changeItem(
+    @User() user: Payload,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: ChangeItemQuantityDto,
+  ) {
+    return this.service.changeItemQuantity(user, orderId, itemId, dto.quantity);
   }
 
   @Patch(':orderId/cancel')

@@ -20,7 +20,7 @@ import { Seat } from '../seat/entities/seat.entity';
 import { SeatService } from '../seat/seat.service';
 import { OrderService } from '../order/order.service';
 import { Item } from '../item/entities/item.entity';
-import { Order } from '../order/entities/order.entity';
+import { Order, OrderStatusEnum } from '../order/entities/order.entity';
 import { ItemService } from '../item/item.service';
 import { UserService } from '../user/user.service';
 import { Payload } from 'src/util/token.service';
@@ -126,6 +126,8 @@ export class CartService {
   }
 
   async checkout(actor: Payload, cartId: string, dto: CheckoutDto = {}) {
+    if (dto.orderId) return this.addToOrder(actor, cartId, dto.orderId);
+
     const order = await this.dataSource.transaction(async (manager) => {
       const user = await this.userService.findOne({ id: actor.sub }, manager);
 
@@ -180,6 +182,95 @@ export class CartService {
     this.realtime.orderToPay(actor.deviceId, created);
 
     return created;
+  }
+
+  // More food for a table: the cart's items join the open order (same product
+  // and note: one line with the quantities added), and the total grows. Stock is
+  // still only taken when the order is paid.
+  private async addToOrder(actor: Payload, cartId: string, orderId: string) {
+    await this.dataSource.transaction(async (manager) => {
+      const cart = await manager.findOne(Cart, {
+        where: {
+          id: cartId,
+          status: CartStatusEnum.ACTIVE,
+          ...companyWhere(actor),
+          ...ownRecordsWhere(actor),
+        },
+        relations: { items: { product: true }, company: true },
+      });
+      if (!cart) throw new NotFoundException('Cart not found');
+      if (cart.items.length <= 0)
+        throw new BadRequestException('Cart is Empty');
+
+      const order = await manager.findOne(Order, {
+        where: {
+          id: orderId,
+          ...companyWhere(actor),
+          ...ownRecordsWhere(actor),
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!order)
+        throw new NotFoundException(
+          'Order not found. Only the worker serving this table can add to it',
+        );
+      if (
+        order.status === OrderStatusEnum.COMPLETED ||
+        order.status === OrderStatusEnum.CANCELLED
+      )
+        throw new BadRequestException(
+          `Order is already ${order.status.toLowerCase()}`,
+        );
+
+      const existing = await manager.find(Item, {
+        where: { order: { id: orderId } },
+        relations: { product: true },
+      });
+      const orderRef = { id: order.id, company: cart.company } as Order;
+      const moved: Item[] = [];
+      const merged: Item[] = [];
+
+      for (const item of cart.items) {
+        const same = existing.find(
+          (e) =>
+            e.product?.id === item.product?.id &&
+            (e.note ?? null) === (item.note ?? null),
+        );
+        if (same) {
+          same.quantity += item.quantity;
+          same.totalPrice = Number(same.totalPrice) + Number(item.totalPrice);
+          merged.push(item);
+        } else {
+          item.order = orderRef;
+          moved.push(item);
+        }
+      }
+
+      await manager.save(Item, [...existing, ...moved]);
+      if (merged.length) await manager.remove(Item, merged);
+
+      const added = cart.items.reduce((s, i) => s + Number(i.totalPrice), 0);
+      // New food for the kitchen on an order it already finished: back in its queue.
+      const forKitchen = cart.items.some((i) => i.product?.sendToKitchen);
+      const status =
+        forKitchen &&
+        (order.status === OrderStatusEnum.READY ||
+          order.status === OrderStatusEnum.SERVED)
+          ? OrderStatusEnum.PENDING
+          : order.status;
+
+      await manager.update(Order, order.id, {
+        subtotal: Number(order.subtotal) + added,
+        total: Number(order.total) + added,
+        status,
+      });
+
+      await manager.remove(Cart, cart);
+    });
+
+    const updated = await this.orderService.getOrder(actor, orderId);
+    this.realtime.orderUpdated(updated);
+    return updated;
   }
 
   async abandon(user: Payload, cartId: string) {

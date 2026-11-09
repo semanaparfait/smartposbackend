@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Payment, PaymentMethodEnum } from './entities/payment.entity';
+import { Item } from '../item/entities/item.entity';
+import { VenueEvent } from '../venue/venue.events';
 import { Employee } from '../employee/entities/employee.entity';
 import { CreateOrderDto } from './dto/request/create-order.dto';
 import { CompleteOrderDto } from './dto/request/complete-order.dto';
@@ -494,6 +496,7 @@ export class OrderService {
     this.realtime.orderUpdated(completed);
     this.realtime.orderPaid(user.deviceId, completed);
     this.realtime.stockLow(order.company.id, lowStock);
+    await this.freeTable(order.id);
 
     return completed;
   }
@@ -507,8 +510,92 @@ export class OrderService {
 
     const cancelled = await this.saveAndNotify(order);
     this.realtime.displayCleared(user.deviceId);
+    await this.freeTable(order.id);
 
     return cancelled;
+  }
+
+  // Fewer of one item on an unpaid order (0 removes it), e.g. a table changed
+  // its mind. Limited to the worker's own orders, like paying.
+  async changeItemQuantity(
+    user: Payload,
+    orderId: string,
+    itemId: string,
+    quantity: number,
+  ) {
+    const order = await this.getOrder(user, orderId);
+    assertOpen(order);
+
+    const item = order.items.find((i) => i.id === itemId);
+    if (!item) throw new NotFoundException('Item not found on this order');
+    if (quantity > item.quantity)
+      throw new BadRequestException(
+        'To add more, add products to the order from the sale screen',
+      );
+    if (quantity === item.quantity) return order;
+    if (quantity <= 0 && order.items.length === 1)
+      throw new BadRequestException(
+        'This is the last item. Cancel the order instead',
+      );
+
+    await this.dataSource.transaction(async (manager) => {
+      if (quantity <= 0) {
+        // remove() so the removal is in the audit log.
+        await manager.remove(Item, item);
+      } else {
+        const unit = Number(item.totalPrice) / item.quantity;
+        await manager.update(Item, item.id, {
+          quantity,
+          totalPrice: Math.round(unit * quantity * 100) / 100,
+        });
+      }
+
+      const items = await manager.find(Item, {
+        where: { order: { id: order.id } },
+      });
+      const subtotal = items.reduce((s, i) => s + Number(i.totalPrice), 0);
+      await manager.update(Order, order.id, {
+        subtotal,
+        total:
+          subtotal + Number(order.tax || 0) + Number(order.deliveryFee || 0),
+      });
+    });
+
+    const updated = await this.getOrder(user, orderId);
+    this.realtime.orderUpdated(updated);
+    return updated;
+  }
+
+  // A table's order was paid or cancelled: the table is free again for the next
+  // guests, on every worker's floor map.
+  private async freeTable(orderId: string) {
+    try {
+      const rows: { table_id: string; company_id: string; since: Date }[] =
+        await this.dataSource.query(
+          `UPDATE venue_tables
+              SET status = 'available', order_id = NULL, booking = NULL,
+                  served_by_id = NULL, served_by_name = NULL,
+                  since = now(), "updatedAt" = now()
+            WHERE order_id = $1
+        RETURNING table_id, company_id, since`,
+          [orderId],
+        );
+      // pg returns [rows, count] for UPDATE ... RETURNING.
+      const list = Array.isArray(rows[0]) ? (rows[0] as typeof rows) : rows;
+      for (const r of list)
+        this.realtime.toStaff(r.company_id, VenueEvent.TABLE_UPDATED, {
+          tableId: r.table_id,
+          status: 'available',
+          since: r.since,
+          orderId: null,
+          order: null,
+          booking: null,
+          servedById: null,
+          servedByName: null,
+        });
+    } catch {
+      // The floor map never stops a payment.
+    }
   }
 
   private async saveAndNotify(order: Order) {
