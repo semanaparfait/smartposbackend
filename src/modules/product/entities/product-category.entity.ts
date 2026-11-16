@@ -31,6 +31,10 @@ export class ProductCategory extends BaseEntity {
   @Column()
   name!: string;
 
+  // The station that makes this category's kitchen items; null = the first station.
+  @Column({ name: 'station_id', type: 'uuid', nullable: true })
+  stationId!: string | null;
+
   @OneToMany(() => Product, (product) => product.category)
   products!: Product[];
 }

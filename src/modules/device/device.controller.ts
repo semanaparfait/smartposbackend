@@ -32,6 +32,7 @@ import { DeviceIdParam } from './dto/request/device-param.dto';
 import { RegistrationStatusEnum } from './entities/device.entity';
 import { UpdateDeviceTypeDto } from './dto/request/update-device-type.dto';
 import { UpdateDeviceMomoCodeDto } from './dto/request/update-device-momo-code.dto';
+import { UpdateDeviceStationDto } from './dto/request/update-device-station.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 
 @ApiTags('Devices')
@@ -120,6 +121,25 @@ export class DeviceController {
       user.role,
       deviceId,
       dto.momoCode,
+    );
+  }
+
+  @Patch(':deviceId/station')
+  @RequirePermissions('devices.manage')
+  @ApiOperation({
+    summary:
+      'Choose the kitchen station a kitchen display shows (null = all stations)',
+  })
+  setStation(
+    @User() user: Payload,
+    @Param() { deviceId }: DeviceIdParam,
+    @Body() dto: UpdateDeviceStationDto,
+  ) {
+    return this.service.setStation(
+      user.sub,
+      user.role,
+      deviceId,
+      dto.stationId,
     );
   }
 

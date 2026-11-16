@@ -8,6 +8,7 @@ import { UserModule } from './modules/user/user.module';
 import { ConfigModule } from '@nestjs/config';
 import { DeviceModule } from './modules/device/device.module';
 import { ProductModule } from './modules/product/product.module';
+import { StationModule } from './modules/station/station.module';
 import { ItemModule } from './modules/item/item.module';
 import { CartModule } from './modules/cart/cart.module';
 import { OrderModule } from './modules/order/order.module';
@@ -60,6 +61,7 @@ import { VenueModule } from './modules/venue/venue.module';
     RoomModule,
     SeatModule,
     ProductModule,
+    StationModule,
     CartModule,
     ItemModule,
     OrderModule,

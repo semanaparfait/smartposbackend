@@ -28,6 +28,11 @@ export class Item extends BaseEntity {
   })
   unitCost!: number | null;
 
+  // The station that makes it, fixed when ordered; null without stations or
+  // when it isn't for the kitchen.
+  @Column({ name: 'station_id', type: 'uuid', nullable: true })
+  stationId!: string | null;
+
   // For the kitchen, e.g. "No onions".
   @Column({ type: 'varchar', length: 255, nullable: true })
   note!: string | null;

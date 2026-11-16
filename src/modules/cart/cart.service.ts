@@ -33,6 +33,8 @@ import {
   ownRecordsWhere,
   targetCompanyId,
 } from 'src/common/utils/company-scope';
+import { stationsFor } from '../station/station.service';
+import { addToParts, statusFromParts } from '../order/kitchen-order';
 
 @Injectable()
 export class CartService {
@@ -163,11 +165,22 @@ export class CartService {
         manager,
       );
 
+      // Each kitchen item goes to its station (kitchen, bar, grill...).
+      const routes = await stationsFor(
+        manager,
+        cart.company.id,
+        cart.items.map((i) => i.product?.id),
+      );
       for (const item of cart.items) {
         item.order = { id: order.id, company: order.company } as Order;
+        item.stationId = routes.get(item.product?.id) ?? null;
       }
 
       await manager.save(Item, cart.items);
+
+      const parts = addToParts(null, cart.items);
+      if (parts)
+        await manager.update(Order, order.id, { stationStatus: parts });
 
       // remove() (rather than delete()) so the removal is recorded in the audit log.
       await manager.remove(Cart, cart);
@@ -233,13 +246,23 @@ export class CartService {
       const orderRef = { id: order.id, company: cart.company } as Order;
       const moved: Item[] = [];
       const merged: Item[] = [];
+      const routes = await stationsFor(
+        manager,
+        cart.company.id,
+        cart.items.map((i) => i.product?.id),
+      );
 
       for (const item of cart.items) {
-        const same = existing.find(
-          (e) =>
-            e.product?.id === item.product?.id &&
-            (e.note ?? null) === (item.note ?? null),
-        );
+        item.stationId = routes.get(item.product?.id) ?? null;
+        // A station's new items stay their own line, so its screen shows
+        // exactly what is new (the earlier ones may already be served).
+        const same =
+          !item.stationId &&
+          existing.find(
+            (e) =>
+              e.product?.id === item.product?.id &&
+              (e.note ?? null) === (item.note ?? null),
+          );
         if (same) {
           same.quantity += item.quantity;
           same.totalPrice = Number(same.totalPrice) + Number(item.totalPrice);
@@ -254,12 +277,15 @@ export class CartService {
       if (merged.length) await manager.remove(Item, merged);
 
       const added = cart.items.reduce((s, i) => s + Number(i.totalPrice), 0);
-      // New food for the kitchen on an order it already finished: back in its queue.
+      // New food for the kitchen on an order it already finished: back in its
+      // queue. With stations, only the stations that got new items.
+      const parts = addToParts(order.stationStatus, moved);
       const forKitchen = cart.items.some((i) => i.product?.sendToKitchen);
-      const status =
-        forKitchen &&
-        (order.status === OrderStatusEnum.READY ||
-          order.status === OrderStatusEnum.SERVED)
+      const status = parts
+        ? statusFromParts(parts)
+        : forKitchen &&
+            (order.status === OrderStatusEnum.READY ||
+              order.status === OrderStatusEnum.SERVED)
           ? OrderStatusEnum.PENDING
           : order.status;
 
@@ -267,6 +293,7 @@ export class CartService {
         subtotal: Number(order.subtotal) + added,
         total: Number(order.total) + added,
         status,
+        stationStatus: parts,
       });
 
       await manager.remove(Cart, cart);

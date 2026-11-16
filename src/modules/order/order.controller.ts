@@ -17,7 +17,10 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { UpdateOrderStatusDto } from './dto/request/update-order-status.dto';
+import {
+  MarkServedDto,
+  UpdateOrderStatusDto,
+} from './dto/request/update-order-status.dto';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from '../user/entities/user.entity';
@@ -106,7 +109,7 @@ export class OrderController {
     @Param() { orderId }: OrderIdParam,
     @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.service.changeStatus(user, orderId, dto.status);
+    return this.service.changeStatus(user, orderId, dto.status, dto.stationId);
   }
 
   @Patch(':orderId/served')
@@ -116,8 +119,12 @@ export class OrderController {
   @ApiOperation({
     summary: 'Mark a ready order as taken to the customer (stops the alert)',
   })
-  markServed(@User() user: Payload, @Param() { orderId }: OrderIdParam) {
-    return this.service.markServed(user, orderId);
+  markServed(
+    @User() user: Payload,
+    @Param() { orderId }: OrderIdParam,
+    @Body() dto: MarkServedDto = {},
+  ) {
+    return this.service.markServed(user, orderId, dto?.stationId);
   }
 
   // sales.checkout, or finance.verify for an order from the floor map: checked

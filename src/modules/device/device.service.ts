@@ -27,6 +27,7 @@ import {
 
 import { UpdateDeviceTypeDto } from './dto/request/update-device-type.dto';
 
+import { StationService } from '../station/station.service';
 @Injectable()
 export class DeviceService {
   constructor(
@@ -41,6 +42,8 @@ export class DeviceService {
     private readonly realtime: RealtimeService,
 
     private readonly push: PushService,
+
+    private readonly stations: StationService,
   ) {}
 
   // Sessions opened on a device only work while it stays registered. `id` is Device.id.
@@ -92,6 +95,8 @@ export class DeviceService {
           }
         : null,
       momoCode: isValid ? deviceMomoCode(device) : null,
+      // A kitchen display's station (null = all stations).
+      stationId: isValid ? (device.stationId ?? null) : null,
     };
   }
 
@@ -345,6 +350,29 @@ export class DeviceService {
     });
     displays.forEach((display) => this.realtime.deviceStatus(display));
 
+    return saved;
+  }
+
+  async setStation(
+    userId: string,
+    role: UserRole,
+    deviceId: string,
+    stationId: string | null,
+  ) {
+    const device = await this.getById(deviceId, userId, role);
+
+    if (stationId) {
+      if (device.type !== DeviceTypeEnum.KITCHEN_DISPLAY)
+        throw new BadRequestException('Only a kitchen display shows a station');
+      if (!device.company)
+        throw new BadRequestException('This device has no company yet');
+      await this.stations.assertInCompany(device.company.id, stationId);
+    }
+
+    device.stationId = stationId;
+    const saved = await this.saveAndNotify(device);
+    // The kitchen screen switches to its new station straight away.
+    this.realtime.deviceStatus(saved);
     return saved;
   }
 

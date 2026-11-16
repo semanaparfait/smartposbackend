@@ -17,6 +17,7 @@ import {
   Order,
   OrderStatusEnum,
   OrderTypeEnum,
+  StationPartStatus,
 } from './entities/order.entity';
 import {
   DataSource,
@@ -43,7 +44,15 @@ import {
 } from 'src/common/permissions/permissions';
 import { StockService } from '../product/stock.service';
 import { DeviceTypeEnum } from '../device/entities/device.entity';
-import { kitchenOrder } from './kitchen-order';
+import {
+  applyParts,
+  closeParts,
+  hasStations,
+  kitchenOrder,
+  kitchenStatusFromParts,
+  removeFromParts,
+} from './kitchen-order';
+import { Station } from '../station/station.entity';
 
 // Orders taken at a table or seat on the floor map.
 const TABLE_ORDER: FindOptionsWhere<Order> = { tableId: Not(IsNull()) };
@@ -285,7 +294,14 @@ export class OrderService {
 
   // Completing is the only way to reach COMPLETED, because that is where payment is
   // recorded. Completed and cancelled orders are final.
-  async changeStatus(user: Payload, id: string, status: OrderStatusEnum) {
+  // With stations, `stationId` moves only that station's part (a station's
+  // screen); without it, every part not yet done (a screen showing all stations).
+  async changeStatus(
+    user: Payload,
+    id: string,
+    status: OrderStatusEnum,
+    stationId?: string,
+  ) {
     if (status === OrderStatusEnum.COMPLETED)
       throw new BadRequestException(
         'Use the complete endpoint to finish an order with its payments',
@@ -299,6 +315,9 @@ export class OrderService {
     // Anyone who can see the order may move it along (e.g. the kitchen marking a
     // waiter's order READY); paying and cancelling stay with its own employee.
     const order = await this.getOrder(user, id, this.viewScope(user));
+
+    if (hasStations(order))
+      return this.moveParts(user, order, status, stationId);
 
     // A delivery paid before its food was ready: the kitchen moves its own step.
     if (order.status === OrderStatusEnum.COMPLETED && order.kitchenStatus)
@@ -318,6 +337,71 @@ export class OrderService {
     const saved = await this.saveAndNotify(order);
 
     if (becameReady) await this.realtime.orderReady(saved);
+
+    return this.onKitchenDisplay(user) ? (kitchenOrder(saved) ?? saved) : saved;
+  }
+
+  private async moveParts(
+    user: Payload,
+    order: Order,
+    status: OrderStatusEnum,
+    stationId?: string,
+  ) {
+    if (
+      ![
+        OrderStatusEnum.PENDING,
+        OrderStatusEnum.PREPARING,
+        OrderStatusEnum.READY,
+      ].includes(status)
+    )
+      throw new BadRequestException(
+        'A station can only start or finish its part',
+      );
+
+    // Paid with no kitchen step left, or cancelled: nothing to move.
+    if (!(order.status === OrderStatusEnum.COMPLETED && order.kitchenStatus))
+      assertOpen(order);
+
+    const parts = { ...order.stationStatus! };
+    if (stationId && !parts[stationId])
+      throw new NotFoundException('This order has nothing for this station');
+    if (stationId && parts[stationId].status === 'SERVED')
+      throw new BadRequestException('This part was already served');
+    const ids = stationId
+      ? [stationId]
+      : Object.keys(parts).filter((id) => parts[id].status !== 'SERVED');
+
+    const nowReady = ids.filter(
+      (id) => status === OrderStatusEnum.READY && parts[id].status !== 'READY',
+    );
+    for (const id of ids)
+      parts[id] = { ...parts[id], status: status as StationPartStatus };
+
+    order.stationStatus = parts;
+    applyParts(order);
+    await this.orderRepo.update(order.id, {
+      status: order.status,
+      kitchenStatus: order.kitchenStatus,
+      stationStatus: parts,
+    });
+
+    const saved =
+      order.status === OrderStatusEnum.COMPLETED
+        ? await this.autoDeliver(order.id)
+        : await this.getOrder(user, order.id, {});
+    this.realtime.orderUpdated(saved);
+
+    // One alert per part, so drinks go out while the grill is still busy.
+    if (nowReady.length) {
+      const stations = await this.dataSource
+        .getRepository(Station)
+        .find({ where: { id: In(nowReady) } });
+      for (const station of stations)
+        await this.realtime.orderReady(saved, {
+          id: station.id,
+          name: station.name,
+        });
+    }
 
     return this.onKitchenDisplay(user) ? (kitchenOrder(saved) ?? saved) : saved;
   }
@@ -388,8 +472,10 @@ export class OrderService {
 
   // Stops the ready alert. Not limited to the worker's own orders: when they are
   // away, whoever was alerted takes the food out. Pressing it twice is harmless.
-  async markServed(user: Payload, id: string) {
+  async markServed(user: Payload, id: string, stationId?: string) {
     const order = await this.getOrder(user, id, {});
+
+    if (hasStations(order)) return this.serveParts(user, order, stationId);
 
     if (order.status === OrderStatusEnum.SERVED) return order;
 
@@ -400,6 +486,39 @@ export class OrderService {
 
     const saved = await this.saveAndNotify(order);
     this.realtime.orderServed(saved, user);
+
+    return saved;
+  }
+
+  // One station's ready part was taken out (or, without `stationId`, every
+  // ready part). The order is served once every part is.
+  private async serveParts(user: Payload, order: Order, stationId?: string) {
+    const parts = { ...order.stationStatus! };
+
+    if (stationId && !parts[stationId])
+      throw new NotFoundException('This order has nothing for this station');
+    if (stationId && parts[stationId].status === 'SERVED') return order;
+
+    const ids = stationId
+      ? [stationId]
+      : Object.keys(parts).filter((id) => parts[id].status === 'READY');
+    if (!ids.length && order.status === OrderStatusEnum.SERVED) return order;
+    if (!ids.length || ids.some((id) => parts[id].status !== 'READY'))
+      throw new BadRequestException('Only a ready order can be served');
+
+    for (const id of ids) parts[id] = { ...parts[id], status: 'SERVED' };
+    order.stationStatus = parts;
+    applyParts(order);
+    await this.orderRepo.update(order.id, {
+      status: order.status,
+      kitchenStatus: order.kitchenStatus,
+      stationStatus: parts,
+    });
+
+    const saved = await this.getOrder(user, order.id, {});
+    this.realtime.orderUpdated(saved);
+    for (const id of ids) this.realtime.orderServed(saved, user, id);
+    if (!stationId) this.realtime.orderServed(saved, user);
 
     return saved;
   }
@@ -497,11 +616,16 @@ export class OrderService {
       // A delivery paid before its food is ready keeps the kitchen's step.
       locked!.kitchenStatus =
         locked!.type === OrderTypeEnum.DELIVERY &&
-        order.items.some((i) => i.product?.sendToKitchen) &&
+        order.items.some((i) => i.stationId || i.product?.sendToKitchen) &&
         (locked!.status === OrderStatusEnum.PENDING ||
           locked!.status === OrderStatusEnum.PREPARING)
-          ? (locked!.status as unknown as KitchenStatusEnum)
+          ? hasStations(locked!)
+            ? kitchenStatusFromParts(locked!.stationStatus!)
+            : (locked!.status as unknown as KitchenStatusEnum)
           : null;
+      // Nothing left to track for the stations: every part counts as served.
+      if (hasStations(locked!) && !locked!.kitchenStatus)
+        locked!.stationStatus = closeParts(locked!.stationStatus!);
 
       // Saved without loaded relations: re-saving `order` (whose payments list is
       // still empty) would unlink the payments just added.
@@ -579,10 +703,21 @@ export class OrderService {
         where: { order: { id: order.id } },
       });
       const subtotal = items.reduce((s, i) => s + Number(i.totalPrice), 0);
+
+      // A removed item leaves its station's part; the order's status follows.
+      const changes: Partial<Order> = {};
+      if (quantity <= 0 && hasStations(order)) {
+        order.stationStatus = removeFromParts(order.stationStatus, item, items);
+        changes.stationStatus = order.stationStatus;
+        applyParts(order);
+        changes.status = order.status;
+      }
+
       await manager.update(Order, order.id, {
         subtotal,
         total:
           subtotal + Number(order.tax || 0) + Number(order.deliveryFee || 0),
+        ...changes,
       });
     });
 

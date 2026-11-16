@@ -519,9 +519,11 @@ export class RealtimeGateway
       type: DeviceTypeEnum;
       display_for_id: string | null;
       momo_code: string | null;
+      station_id: string | null;
     }[] = await this.dataSource.query(
       `SELECT d.registration_status, d.type, d.display_for_id,
-              COALESCE(d.momo_code, t.momo_code) AS momo_code
+              COALESCE(d.momo_code, t.momo_code) AS momo_code,
+              d.station_id
          FROM devices d
          LEFT JOIN devices t ON t.id = d.display_for_id
         WHERE d.id = $1`,
@@ -534,6 +536,7 @@ export class RealtimeGateway
       type: row?.type ?? null,
       displayForId: row?.display_for_id ?? null,
       momoCode: row?.momo_code ?? null,
+      stationId: row?.station_id ?? null,
     };
   }
 }

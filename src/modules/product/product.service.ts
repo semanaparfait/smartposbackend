@@ -24,6 +24,7 @@ import { Payload } from 'src/util/token.service';
 import { companyWhere, targetCompanyId } from 'src/common/utils/company-scope';
 import { requirePermission } from 'src/common/permissions/permissions';
 
+import { StationService } from '../station/station.service';
 @Injectable()
 export class ProductService {
   constructor(
@@ -41,6 +42,8 @@ export class ProductService {
     private stockService: StockService,
 
     private realtime: RealtimeService,
+
+    private stations: StationService,
   ) {}
 
   // ---------------- CATEGORY ----------------
@@ -51,12 +54,15 @@ export class ProductService {
     picture: Express.Multer.File,
   ) {
     const companyId = targetCompanyId(user, dto.companyId);
+    if (dto.stationId)
+      await this.stations.assertInCompany(companyId, dto.stationId);
 
     const category = await this.fileService.createWithImage(picture, () =>
       this.categoryRepo.save(
         this.categoryRepo.create({
           name: dto.name,
           company: { id: companyId },
+          stationId: dto.stationId ?? null,
         }),
       ),
     );
@@ -91,6 +97,11 @@ export class ProductService {
     const category = await this.getCategory(user, id);
 
     if (dto.name !== undefined) category.name = dto.name;
+    if (dto.stationId !== undefined) {
+      if (dto.stationId)
+        await this.stations.assertInCompany(category.company.id, dto.stationId);
+      category.stationId = dto.stationId;
+    }
 
     await this.categoryRepo.save(category);
 
@@ -141,6 +152,8 @@ export class ProductService {
     if (stockQuantity) requirePermission(user, 'inventory.adjust');
 
     if (categoryId) await this.getCompanyCategory(categoryId, companyId);
+    if (dto.stationId)
+      await this.stations.assertInCompany(companyId, dto.stationId);
 
     await this.assertCodesFree(companyId, dto);
 
@@ -241,6 +254,8 @@ export class ProductService {
     }
 
     await this.assertCodesFree(product.company.id, dto, id);
+    if (dto.stationId)
+      await this.stations.assertInCompany(product.company.id, dto.stationId);
 
     Object.assign(product, fields);
 

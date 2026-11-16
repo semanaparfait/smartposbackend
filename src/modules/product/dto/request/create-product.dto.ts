@@ -47,7 +47,8 @@ export class CreateProductDto {
 
   @ApiProperty({
     required: false,
-    description: 'A picture from image search or a pasted link, instead of an upload',
+    description:
+      'A picture from image search or a pasted link, instead of an upload',
   })
   @IsOptional()
   @IsString()
@@ -168,4 +169,17 @@ export class CreateProductDto {
   @IsOptional()
   @IsBoolean()
   sendToKitchen?: boolean;
+
+  // Sent as form data: "" (or "null") goes back to the category's station.
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: "Kitchen station for this product; empty = its category's",
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' || value === 'null' ? null : value,
+  )
+  @IsOptional()
+  @IsUUID()
+  stationId?: string | null;
 }

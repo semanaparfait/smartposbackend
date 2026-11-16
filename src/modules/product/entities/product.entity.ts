@@ -71,7 +71,12 @@ export class Product extends BaseEntity {
 
   // How it is bought, when that differs from `unit`: a Tray of 30 eggs counted in
   // Piece. Stock and recipes stay in `unit`.
-  @Column({ name: 'purchase_unit', type: 'varchar', length: 20, nullable: true })
+  @Column({
+    name: 'purchase_unit',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
   purchaseUnit!: string | null;
 
   @Column({
@@ -112,6 +117,11 @@ export class Product extends BaseEntity {
 
   @Column({ name: 'send_to_kitchen', default: false })
   sendToKitchen!: boolean;
+
+  // Made at another station than its category's (e.g. a cocktail in Drinks made
+  // at the bar while beers are not); null = the category's station.
+  @Column({ name: 'station_id', type: 'uuid', nullable: true })
+  stationId!: string | null;
 
   // Stock used to make other products; never sold on its own.
   @Column({ name: 'is_ingredient', default: false })

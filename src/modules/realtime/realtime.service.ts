@@ -36,8 +36,9 @@ export class RealtimeService {
   }
 
   // The food is ready: tells whoever took the order, or everyone at the company
-  // if they aren't connected, so it is never left waiting unnoticed.
-  async orderReady(order: Order) {
+  // if they aren't connected, so it is never left waiting unnoticed. With
+  // stations, one alert per station's part (`station`), e.g. "Bar ready".
+  async orderReady(order: Order, station?: { id: string; name: string }) {
     const waiterId = order.user?.id;
 
     if (waiterId && (await this.gateway.isConnected(waiterId)))
@@ -46,6 +47,7 @@ export class RealtimeService {
         RealtimeEvent.ORDER_READY,
         {
           order,
+          station: station ?? null,
           wholeCompany: false,
         },
       );
@@ -53,14 +55,17 @@ export class RealtimeService {
     if (order.company?.id)
       this.gateway.emitToStaff(order.company.id, RealtimeEvent.ORDER_READY, {
         order,
+        station: station ?? null,
         wholeCompany: true,
       });
   }
 
-  orderServed(order: Order, by: Payload) {
+  // `stationId`: only that station's part was taken out (null = the whole order).
+  orderServed(order: Order, by: Payload, stationId?: string) {
     if (order.company?.id)
       this.gateway.emitToStaff(order.company.id, RealtimeEvent.ORDER_SERVED, {
         orderId: order.id,
+        stationId: stationId ?? null,
         servedBy: { id: by.sub, name: by.name ?? null },
       });
   }
@@ -73,6 +78,7 @@ export class RealtimeService {
       type: device.type,
       displayForId: device.displayFor?.id ?? null,
       momoCode: deviceMomoCode(device),
+      stationId: device.stationId ?? null,
     });
   }
 

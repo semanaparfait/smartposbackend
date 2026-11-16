@@ -27,6 +27,16 @@ export enum OrderTypeEnum {
   DELIVERY = 'DELIVERY',
 }
 
+// One station's part of an order. `items`: when the part started again for
+// items added after it was served, only those item ids (the station sees just
+// them); null = all the station's items on the order.
+export type StationPartStatus = 'PENDING' | 'PREPARING' | 'READY' | 'SERVED';
+export interface StationPart {
+  status: StationPartStatus;
+  items: string[] | null;
+}
+export type StationStatus = Record<string, StationPart>;
+
 export interface GeoPosition {
   lat: number;
   lng: number;
@@ -210,6 +220,11 @@ export class Order extends BaseEntity {
     nullable: true,
   })
   kitchenStatus!: KitchenStatusEnum | null;
+
+  // Each station's part, by station id. null when the company has no stations
+  // or nothing goes to a station: `status` then works as it always did.
+  @Column({ name: 'station_status', type: 'jsonb', nullable: true })
+  stationStatus!: StationStatus | null;
 
   // Why it couldn't be delivered.
   @Column({ name: 'delivery_problem', type: 'text', nullable: true })

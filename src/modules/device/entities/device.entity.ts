@@ -85,6 +85,10 @@ export class Device extends BaseEntity {
   @Column({ name: 'momo_code', type: 'varchar', length: 12, nullable: true })
   momoCode!: string | null;
 
+  // A kitchen display's station: it shows only that station's items. null = all.
+  @Column({ name: 'station_id', type: 'uuid', nullable: true })
+  stationId!: string | null;
+
   @ManyToOne(() => Company, (company) => company.devices, { nullable: true })
   @JoinColumn({ name: 'company_id' })
   company!: Company;

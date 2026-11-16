@@ -24,7 +24,8 @@ export class RestockProductDto {
   @ApiProperty({
     required: false,
     example: 1200,
-    description: 'What one unit cost in this delivery; replaces the buying price',
+    description:
+      'What one unit cost in this delivery; replaces the buying price',
   })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
