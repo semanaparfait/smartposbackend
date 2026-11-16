@@ -6,10 +6,18 @@ import { Order } from './entities/order.entity';
 import { ProductModule } from '../product/product.module';
 import { DeliveryService } from './delivery.service';
 import { DeliveryController } from './delivery.controller';
+import { DeliveryPageController } from './delivery-page.controller';
+import { DeliveryPin } from './entities/delivery-pin.entity';
+import { FileModule } from '../file/file.module';
+import { SmsService } from './sms.service';
 @Module({
-  imports: [TypeOrmModule.forFeature([Order]), ProductModule],
-  controllers: [OrderController, DeliveryController],
-  providers: [OrderService, DeliveryService],
+  imports: [
+    TypeOrmModule.forFeature([Order, DeliveryPin]),
+    ProductModule,
+    FileModule,
+  ],
+  controllers: [OrderController, DeliveryController, DeliveryPageController],
+  providers: [OrderService, DeliveryService, SmsService],
   exports: [OrderService, DeliveryService],
 })
 export class OrderModule {}

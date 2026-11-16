@@ -27,6 +27,7 @@ import { OrderIdParam } from './dto/request/order-param.dto';
 import { CompleteOrderDto } from './dto/request/complete-order.dto';
 import { ChangeItemQuantityDto } from './dto/request/change-item.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
+import { AnyEmployee } from 'src/common/decorators/any-employee.decorator';
 import { DeviceTypes } from 'src/common/decorators/device-types.decorator';
 import { DeviceTypeEnum } from '../device/entities/device.entity';
 
@@ -51,6 +52,20 @@ export class OrderController {
   }
 
   // Declared before ':orderId' so it isn't read as an order id.
+  @Get('to-verify')
+  @Roles(UserRole.EMPLOYEE, UserRole.OWNER)
+  @RequirePermissions('finance.verify')
+  @ApiOperation({
+    summary: 'Unpaid orders from the floor map, from every waiter',
+  })
+  @ApiQuery({ name: 'companyId', required: false })
+  ordersToVerify(
+    @User() user: Payload,
+    @Query('companyId') companyId?: string,
+  ) {
+    return this.service.ordersToVerify(user, companyId);
+  }
+
   @Get('staff-performance')
   @Roles(UserRole.OWNER, UserRole.EMPLOYEE)
   @RequirePermissions('reports.view')
@@ -105,9 +120,14 @@ export class OrderController {
     return this.service.markServed(user, orderId);
   }
 
+  // sales.checkout, or finance.verify for an order from the floor map: checked
+  // in the service, which knows which one it is. @AnyEmployee lets employees
+  // past the guard (which otherwise refuses them on owner-allowed routes that
+  // name no permission) so the service can make that check.
   @Patch(':orderId/complete')
   @DeviceTypes(DeviceTypeEnum.POS_TERMINAL)
-  @RequirePermissions('sales.checkout')
+  @Roles(UserRole.EMPLOYEE, UserRole.OWNER)
+  @AnyEmployee()
   @ApiOperation({ summary: 'Complete order and record its payments' })
   completeOrder(
     @User() user: Payload,

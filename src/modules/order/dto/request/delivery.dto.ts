@@ -11,6 +11,8 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
@@ -19,6 +21,76 @@ import { PaymentMethodEnum } from '../../entities/payment.entity';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
+
+export const NOTIFY_BY = ['WHATSAPP', 'SMS'] as const;
+export const LANGUAGES = ['en', 'rw', 'fr', 'sw'] as const;
+
+// A phone's position, as expo-location gives it.
+export class PositionDto {
+  @ApiProperty({ example: -1.9441 })
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  lat!: number;
+
+  @ApiProperty({ example: 30.0619 })
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  lng!: number;
+
+  @ApiProperty({ required: false, example: 15, description: 'Metres' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  accuracy?: number | null;
+}
+
+// How the person marking it delivered proves the customer got it: the
+// customer's code (typed or from their QR), or why there was none.
+export class DeliveryProofDto {
+  @ApiProperty({ required: false, example: '4827' })
+  @IsOptional()
+  @Matches(/^\d{4,8}$/, { message: 'The code is 4 digits' })
+  code?: string;
+
+  @ApiProperty({ required: false, enum: ['CODE', 'QR'] })
+  @IsOptional()
+  @IsIn(['CODE', 'QR'])
+  via?: 'CODE' | 'QR';
+
+  @ApiProperty({
+    required: false,
+    example: 'Customer lost the message',
+    description: 'Given instead of the code; the delivery is flagged',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(300)
+  noCodeReason?: string;
+
+  @ApiProperty({ required: false, type: PositionDto, nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PositionDto)
+  position?: PositionDto | null;
+}
+
+export class ArrivedDto {
+  @ApiProperty({ required: false, type: PositionDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PositionDto)
+  position?: PositionDto;
+}
+
+export class CodeSentDto {
+  @ApiProperty({ enum: NOTIFY_BY })
+  @IsIn(NOTIFY_BY)
+  via!: (typeof NOTIFY_BY)[number];
+}
 
 // Sent with checkout to make the order a delivery.
 export class DeliveryDetailsDto {
@@ -78,6 +150,18 @@ export class DeliveryDetailsDto {
   @IsString()
   @MaxLength(300)
   note?: string;
+
+  // With delivery codes on: how the till will send the customer their code,
+  // and in which language.
+  @ApiProperty({ required: false, enum: NOTIFY_BY })
+  @IsOptional()
+  @IsIn(NOTIFY_BY)
+  notifyBy?: (typeof NOTIFY_BY)[number];
+
+  @ApiProperty({ required: false, enum: LANGUAGES })
+  @IsOptional()
+  @IsIn(LANGUAGES)
+  customerLanguage?: (typeof LANGUAGES)[number];
 }
 
 export class CheckoutDto {
@@ -151,6 +235,16 @@ export class DeliveredDto {
   @IsString()
   @MaxLength(100)
   outsideRider?: string;
+
+  @ApiProperty({
+    required: false,
+    type: DeliveryProofDto,
+    description: 'Required when the order needs a delivery code',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeliveryProofDto)
+  proof?: DeliveryProofDto;
 }
 
 export class NotDeliveredDto {
@@ -196,4 +290,12 @@ export class DeliverySettingsDto {
   @ValidateNested({ each: true })
   @Type(() => DeliveryAreaDto)
   areas!: DeliveryAreaDto[];
+
+  @ApiProperty({
+    required: false,
+    description: 'Customers get a code the rider needs to finish a delivery',
+  })
+  @IsOptional()
+  @IsBoolean()
+  codes?: boolean;
 }

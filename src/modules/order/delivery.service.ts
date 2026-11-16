@@ -1,11 +1,13 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Payload } from 'src/util/token.service';
 import {
   scopeCompanyId,
@@ -18,19 +20,44 @@ import { ensureReadyRole, READY_ROLES } from '../employee/ready-roles';
 import { User, UserRole } from '../user/entities/user.entity';
 import { RealtimeService } from '../realtime/realtime.service';
 import {
+  DeliveryProof,
   DeliveryStatusEnum,
+  GeoPosition,
   Order,
   OrderStatusEnum,
   OrderTypeEnum,
 } from './entities/order.entity';
+import { DeliveryPin } from './entities/delivery-pin.entity';
 import {
+  ArrivedDto,
+  CodeSentDto,
   DeliveredDto,
   DeliveryDetailsDto,
+  DeliveryProofDto,
   DeliverySettingsDto,
   NotDeliveredDto,
   SendDeliveryDto,
 } from './dto/request/delivery.dto';
 import { OrderService } from './order.service';
+import { FileService } from '../file/file.service';
+import { SmsService } from './sms.service';
+import { codeSms, deliveredSms } from './delivery-messages';
+import {
+  AWAY_METRES,
+  codesMatch,
+  intlPhone,
+  MAX_CODE_TRIES,
+  metresBetween,
+  newDeliveryCode,
+  newTrackToken,
+  PAGE_DAYS_AFTER,
+  trackUrl,
+} from './delivery-codes';
+
+// Handover photos, sized like receipt photos.
+const PROOF_SIZE = 'f_auto,q_auto,c_limit,w_1600';
+// The person who marked it delivered may add the photo this long afterwards.
+const PHOTO_MINUTES = 30;
 
 const OPEN = [DeliveryStatusEnum.WAITING, DeliveryStatusEnum.ON_THE_WAY];
 
@@ -45,6 +72,13 @@ const canRide = (permissions: string[] | null | undefined) =>
 const isRider = (user: Payload) =>
   user.role === UserRole.EMPLOYEE && canRide(user.permissions);
 
+// Who may see a customer's delivery code: the till and managers, never a rider
+// (the rider must get it from the customer, or it proves nothing).
+const canSeeCode = (user: Payload) =>
+  !isRider(user) &&
+  (hasPermission(user, 'deliveries.manage') ||
+    hasPermission(user, 'sales.create'));
+
 @Injectable()
 export class DeliveryService {
   constructor(
@@ -53,6 +87,8 @@ export class DeliveryService {
     private readonly dataSource: DataSource,
     private readonly orders: OrderService,
     private readonly realtime: RealtimeService,
+    private readonly files: FileService,
+    private readonly sms: SmsService,
   ) {}
 
   // The delivery part of a new order, priced from the owner's settings (the till
@@ -98,6 +134,16 @@ export class DeliveryService {
       rider: dto.riderId ? ({ id: dto.riderId } as User) : null,
       outsideRider: dto.riderId ? null : dto.outsideRider || null,
       note: dto.note || undefined,
+      // With codes on, the customer gets a code the rider must get back from them.
+      ...(company.deliveryCodes
+        ? {
+            deliveryCodeRequired: true,
+            deliveryCode: newDeliveryCode(),
+            deliveryTrackToken: newTrackToken(),
+            notifyBy: dto.notifyBy ?? (dto.customerPhone ? 'WHATSAPP' : null),
+            customerLanguage: dto.customerLanguage ?? 'rw',
+          }
+        : {}),
     };
   }
 
@@ -140,7 +186,7 @@ export class DeliveryService {
         },
       );
 
-    return query.getMany();
+    return this.withCodes(user, await query.getMany());
   }
 
   // Workers who can carry deliveries, to pick from.
@@ -192,7 +238,7 @@ export class DeliveryService {
 
     order.deliveryStatus = DeliveryStatusEnum.ON_THE_WAY;
     order.sentAt = new Date();
-    return this.saveAndShow(order);
+    return this.present(user, await this.saveAndShow(order));
   }
 
   // A rider takes a waiting delivery nobody has. Only one rider gets it when two
@@ -232,7 +278,7 @@ export class DeliveryService {
       throw new BadRequestException('You already left with this delivery');
 
     order.rider = null;
-    return this.saveAndShow(order);
+    return this.present(user, await this.saveAndShow(order));
   }
 
   // The customer has it, straight from waiting or after being sent. Money taken
@@ -246,8 +292,9 @@ export class DeliveryService {
     if (order.status === OrderStatusEnum.CANCELLED)
       throw new BadRequestException('This order was cancelled');
 
-    if (order.status !== OrderStatusEnum.COMPLETED) {
-      const payments = dto.payments ?? [];
+    const needsMoney = order.status !== OrderStatusEnum.COMPLETED;
+    const payments = dto.payments ?? [];
+    if (needsMoney) {
       if (!payments.length)
         throw new BadRequestException('Enter the money received at the door');
       const paid = payments.reduce((sum, p) => sum + toCents(p.amount), 0);
@@ -255,9 +302,6 @@ export class DeliveryService {
         throw new BadRequestException(
           `The customer must pay ${Number(order.total).toLocaleString()} RWF`,
         );
-      // Not limited to the worker's own orders: the rider didn't make it.
-      await this.orders.completeOrder(user, id, { payments }, {});
-      order.collectedBy = { id: user.sub } as User;
     }
 
     if (dto.riderId)
@@ -266,6 +310,18 @@ export class DeliveryService {
         order.company.id,
         dto.riderId,
       );
+
+    // The customer's code is checked before any money is recorded, so a wrong
+    // code leaves the order exactly as it was.
+    const checked = order.deliveryCodeRequired
+      ? await this.checkProof(user, order, dto.proof)
+      : null;
+
+    if (needsMoney) {
+      // Not limited to the worker's own orders: the rider didn't make it.
+      await this.orders.completeOrder(user, id, { payments }, {});
+      order.collectedBy = { id: user.sub } as User;
+    }
 
     await this.orderRepo.update(id, {
       deliveryStatus: DeliveryStatusEnum.DELIVERED,
@@ -278,8 +334,186 @@ export class DeliveryService {
         : dto.outsideRider
           ? { rider: null, outsideRider: dto.outsideRider }
           : {}),
+      ...(checked
+        ? {
+            deliveryProof: checked.proof,
+            deliveredPosition: checked.position,
+          }
+        : {}),
     });
-    return this.show(id);
+    if (checked?.pin) await this.savePin(order, checked.pin);
+    // Tell the customer at once; if they didn't get it, they call the shop.
+    if (order.deliveryCodeRequired) void this.deliveredSms(id);
+    return this.present(user, await this.show(id));
+  }
+
+  // The rider is at the customer's door. Their position helps check the
+  // delivery later; without one, only the time is kept.
+  async arrived(user: Payload, id: string, dto: ArrivedDto) {
+    const order = await this.getForAction(user, id);
+    if (!OPEN.includes(order.deliveryStatus!))
+      throw new BadRequestException('This delivery is already finished');
+
+    await this.orderRepo.update(id, {
+      arrivedAt: new Date(),
+      arrivedPosition: dto.position ? position(dto.position) : null,
+    });
+    return this.present(user, await this.show(id));
+  }
+
+  // The till sent the customer their code (WhatsApp or SMS from its own phone).
+  async codeSent(user: Payload, id: string, dto: CodeSentDto) {
+    if (!canSeeCode(user))
+      throw new ForbiddenException('Your role does not allow this');
+    const order = await this.getForAction(user, id);
+    if (!order.deliveryCodeRequired)
+      throw new BadRequestException('This delivery has no code');
+
+    await this.orderRepo.update(id, {
+      codeSentAt: new Date(),
+      notifyBy: dto.via,
+    });
+    return this.present(user, await this.show(id));
+  }
+
+  // A photo of the handover, for a delivery finished without the code. Only the
+  // person who marked it delivered, soon after (or a manager).
+  async proofPhoto(user: Payload, id: string, photo?: Express.Multer.File) {
+    if (!photo) throw new BadRequestException('Add a photo of the handover');
+    const order = await this.getForAction(user, id);
+    const proof = order.deliveryProof;
+    if (order.deliveryStatus !== DeliveryStatusEnum.DELIVERED || !proof)
+      throw new BadRequestException('Mark the delivery delivered first');
+
+    const manager = hasPermission(user, 'deliveries.manage');
+    const minutes = order.deliveredAt
+      ? (Date.now() - order.deliveredAt.getTime()) / 60_000
+      : Infinity;
+    if (!manager && (proof.by !== user.sub || minutes > PHOTO_MINUTES))
+      throw new ForbiddenException(
+        'Only who delivered it can add the photo, right after',
+      );
+
+    const photoUrl = await this.files.uploadImage(photo, PROOF_SIZE);
+    if (proof.photoUrl) await this.files.deleteByUrl(proof.photoUrl);
+    await this.orderRepo.update(id, {
+      deliveryProof: { ...proof, photoUrl },
+    });
+    return this.present(user, await this.show(id));
+  }
+
+  // ---- SMS to the customer (when SMS_PROVIDER is set) ----
+
+  // Right after checkout: the code goes out by itself. Never holds up the sale;
+  // a failure only leaves "not sent" on the till, which can send it again.
+  async autoSendCode(orderId: string) {
+    try {
+      await this.sendCodeSms(orderId);
+    } catch {
+      // Logged by SmsService; the till still shows the code and a send button.
+    }
+  }
+
+  // The till asks for the code to be sent (again). 503 when the server has no
+  // SMS provider: the app then opens its own SMS app or WhatsApp instead.
+  async sendCode(user: Payload, id: string) {
+    if (!canSeeCode(user))
+      throw new ForbiddenException('Your role does not allow this');
+    const order = await this.getForAction(user, id);
+    if (!order.deliveryCodeRequired)
+      throw new BadRequestException('This delivery has no code');
+    if (!OPEN.includes(order.deliveryStatus!))
+      throw new BadRequestException('This delivery is already finished');
+    // One SMS a minute per delivery: each one costs money.
+    if (order.codeSentAt && Date.now() - order.codeSentAt.getTime() < 60_000)
+      throw new BadRequestException(
+        'The code was just sent. Wait a minute before sending it again',
+      );
+
+    const result = await this.sendCodeSms(id);
+    if (result === 'OFF')
+      throw new HttpException(
+        'SMS is not set up on the server',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    if (result === 'NO_PHONE')
+      throw new BadRequestException('This delivery has no phone number');
+    if (result === 'FAILED')
+      throw new HttpException(
+        'The SMS could not be sent. Try again, or use WhatsApp',
+        HttpStatus.BAD_GATEWAY,
+      );
+    return this.present(user, await this.show(id));
+  }
+
+  private async sendCodeSms(
+    id: string,
+  ): Promise<'SENT' | 'OFF' | 'FAILED' | 'NO_PHONE'> {
+    if (!this.sms.enabled) return 'OFF';
+    const order = await this.orderRepo.findOne({
+      where: { id, deliveryCodeRequired: true },
+      select: {
+        id: true,
+        deliveryCode: true,
+        customerPhone: true,
+        customerLanguage: true,
+        payOnDelivery: true,
+        status: true,
+        total: true,
+        company: { id: true, name: true, phone_number: true },
+      },
+      relations: { company: true },
+    });
+    const to = intlPhone(order?.customerPhone);
+    if (!order?.deliveryCode || !to) return 'NO_PHONE';
+
+    const result = await this.sms.send(
+      to,
+      codeSms({
+        language: order.customerLanguage,
+        shop: order.company.name,
+        code: order.deliveryCode,
+        phone: order.company.phone_number,
+        toPay:
+          order.payOnDelivery && order.status !== OrderStatusEnum.COMPLETED
+            ? Number(order.total)
+            : null,
+      }),
+    );
+    if (result === 'SENT') {
+      await this.orderRepo.update(id, {
+        codeSentAt: new Date(),
+        notifyBy: 'SMS',
+      });
+      await this.show(id);
+    }
+    return result;
+  }
+
+  private async deliveredSms(id: string) {
+    try {
+      if (!this.sms.enabled) return;
+      const order = await this.orderRepo.findOne({
+        where: { id },
+        relations: { company: true, rider: { employee: true } },
+      });
+      const to = intlPhone(order?.customerPhone);
+      if (!order || !to) return;
+      const rider =
+        order.rider?.employee?.name ?? order.rider?.name ?? order.outsideRider;
+      await this.sms.send(
+        to,
+        deliveredSms({
+          language: order.customerLanguage,
+          shop: order.company.name,
+          at: order.deliveredAt ?? new Date(),
+          rider: rider ? rider.split(/[\s-]+/)[0] : null,
+          phone: order.company.phone_number,
+        }),
+      );
+    } catch {
+      // Only a courtesy message: the delivery is already recorded.
+    }
   }
 
   // Came back. An unpaid order is cancelled (nothing left the stock); a paid one
@@ -295,7 +529,7 @@ export class DeliveryService {
     order.kitchenStatus = null;
     if (order.status !== OrderStatusEnum.COMPLETED)
       order.status = OrderStatusEnum.CANCELLED;
-    return this.saveAndShow(order);
+    return this.present(user, await this.saveAndShow(order));
   }
 
   async saveSettings(user: Payload, dto: DeliverySettingsDto) {
@@ -321,6 +555,10 @@ export class DeliveryService {
       deliveryFee: dto.fee,
       deliveryAreas: areas,
       deliveryRiders: dto.riders,
+      // Left out by apps from before delivery codes: keep what was saved.
+      ...(dto.codes !== undefined
+        ? { deliveryCodes: dto.enabled && dto.codes }
+        : {}),
     });
     const riderRole =
       dto.enabled && dto.riders
@@ -335,8 +573,209 @@ export class DeliveryService {
       fee: dto.fee,
       areas,
       riders: dto.riders,
+      codes: dto.codes !== undefined ? dto.enabled && dto.codes : undefined,
       riderRole,
     };
+  }
+
+  // What the customer's page shows, found by its link. Null when the link is
+  // wrong, or the delivery finished more than PAGE_DAYS_AFTER days ago.
+  async customerPage(token: string) {
+    if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
+    const order = await this.orderRepo.findOne({
+      where: {
+        deliveryTrackToken: token,
+        type: OrderTypeEnum.DELIVERY,
+        deliveryCodeRequired: true,
+      },
+      relations: { company: true, rider: { employee: true } },
+    });
+    if (!order) return null;
+
+    const finished = !OPEN.includes(order.deliveryStatus!);
+    const since = finished
+      ? (order.deliveredAt ?? order.updatedAt)
+      : order.createdAt;
+    const days = (Date.now() - since.getTime()) / 86_400_000;
+    if (days > (finished ? PAGE_DAYS_AFTER : 7)) return null;
+
+    // The code only while it can still be used.
+    const code = finished
+      ? null
+      : ((
+          await this.orderRepo.findOne({
+            where: { id: order.id },
+            select: { id: true, deliveryCode: true },
+          })
+        )?.deliveryCode ?? null);
+
+    const riderName =
+      order.rider?.employee?.name ?? order.rider?.name ?? order.outsideRider;
+    return {
+      orderId: order.id,
+      code,
+      status: order.deliveryStatus!,
+      deliveredAt: order.deliveredAt,
+      language: order.customerLanguage ?? 'rw',
+      customerName: order.customerName,
+      rider: riderName ? riderName.split(/[\s-]+/)[0] : null,
+      toPay:
+        order.payOnDelivery && order.status !== OrderStatusEnum.COMPLETED
+          ? Number(order.total)
+          : null,
+      shop: {
+        name: order.company.name,
+        phone: order.company.phone_number,
+        logo: order.company.logo,
+      },
+    };
+  }
+
+  // ---- delivery codes ----
+
+  // Checks how the customer's receipt was proven, and works out where it
+  // happened. Wrong codes are counted (and saved) before refusing; after
+  // MAX_CODE_TRIES only "no code" (flagged for the owner) is accepted.
+  private async checkProof(
+    user: Payload,
+    order: Order,
+    proof?: DeliveryProofDto,
+  ): Promise<{
+    proof: DeliveryProof;
+    position: GeoPosition | null;
+    pin: GeoPosition | null;
+  }> {
+    if (!proof || (!proof.code && !proof.noCodeReason))
+      throw new BadRequestException("This delivery needs the customer's code");
+
+    const secret = await this.orderRepo.findOne({
+      where: { id: order.id },
+      select: {
+        id: true,
+        deliveryCode: true,
+        deliveryCodeTries: true,
+        arrivedPosition: true,
+        customerPhone: true,
+      },
+    });
+    const tries = secret?.deliveryCodeTries ?? 0;
+
+    let method: DeliveryProof['method'];
+    const flags: NonNullable<DeliveryProof['flags']> = [];
+    if (proof.code) {
+      if (tries >= MAX_CODE_TRIES)
+        throw new HttpException(
+          'Too many wrong codes. Ask the shop to check this delivery',
+          HttpStatus.LOCKED,
+        );
+      if (
+        !secret?.deliveryCode ||
+        !codesMatch(proof.code, secret.deliveryCode)
+      ) {
+        await this.orderRepo.increment(
+          { id: order.id },
+          'deliveryCodeTries',
+          1,
+        );
+        const left = MAX_CODE_TRIES - tries - 1;
+        if (left <= 0) {
+          // Shown on every screen of the shop, so someone calls the customer.
+          await this.show(order.id);
+          throw new HttpException(
+            'Too many wrong codes. Ask the shop to check this delivery',
+            HttpStatus.LOCKED,
+          );
+        }
+        throw new BadRequestException(
+          `Wrong code. ${left} ${left === 1 ? 'try' : 'tries'} left`,
+        );
+      }
+      method = proof.via === 'QR' ? 'QR' : 'CODE';
+    } else {
+      method = 'NO_CODE';
+      flags.push('NO_CODE');
+    }
+
+    // Where it happened, against the customer's usual place, or else where the
+    // rider said they arrived. Only flagged: GPS in town can be far off.
+    const here = proof.position ? position(proof.position) : null;
+    const phone = intlPhone(secret?.customerPhone ?? order.customerPhone);
+    const pin = phone
+      ? await this.dataSource.getRepository(DeliveryPin).findOne({
+          where: { company: { id: order.company.id }, phone },
+        })
+      : null;
+    const reference = pin ?? secret?.arrivedPosition ?? null;
+
+    let distanceM: number | null = null;
+    if (!here) flags.push('NO_GPS');
+    else if (reference) {
+      distanceM = Math.round(metresBetween(here, reference));
+      if (distanceM > AWAY_METRES + (here.accuracy ?? 0)) flags.push('AWAY');
+    }
+
+    return {
+      proof: {
+        method,
+        distanceM,
+        flags,
+        photoUrl: null,
+        note: method === 'NO_CODE' ? (proof.noCodeReason ?? null) : null,
+        by: user.sub,
+      },
+      position: here,
+      // A first delivery to this number, confirmed with the code and not far
+      // from where the rider arrived, becomes the customer's place.
+      pin:
+        phone && !pin && here && method !== 'NO_CODE' && !flags.includes('AWAY')
+          ? here
+          : null,
+    };
+  }
+
+  private async savePin(order: Order, at: GeoPosition) {
+    const phone = intlPhone(order.customerPhone);
+    if (!phone) return;
+    await this.dataSource
+      .createQueryBuilder()
+      .insert()
+      .into(DeliveryPin)
+      .values({
+        company: { id: order.company.id },
+        phone,
+        lat: at.lat,
+        lng: at.lng,
+      })
+      .orIgnore()
+      .execute();
+  }
+
+  // The code and the customer's page link, added for those allowed to see
+  // them. Copies, so the order objects already sent to live screens stay as
+  // they were.
+  private async withCodes(user: Payload, list: Order[]) {
+    const ids = list.filter((o) => o.deliveryCodeRequired).map((o) => o.id);
+    if (!ids.length || !canSeeCode(user)) return list;
+
+    const secrets = await this.orderRepo.find({
+      where: { id: In(ids) },
+      select: { id: true, deliveryCode: true, deliveryTrackToken: true },
+    });
+    const byId = new Map(secrets.map((s) => [s.id, s]));
+    return list.map((o) => {
+      const s = byId.get(o.id);
+      return s
+        ? {
+            ...o,
+            deliveryCode: s.deliveryCode ?? null,
+            deliveryTrackUrl: trackUrl(s.deliveryTrackToken),
+          }
+        : o;
+    });
+  }
+
+  private async present(user: Payload, order: Order) {
+    return (await this.withCodes(user, [order]))[0];
   }
 
   // ---- helpers ----
@@ -414,6 +853,12 @@ export class DeliveryService {
     return order;
   }
 }
+
+const position = (p: {
+  lat: number;
+  lng: number;
+  accuracy?: number | null;
+}): GeoPosition => ({ lat: p.lat, lng: p.lng, accuracy: p.accuracy ?? null });
 
 const startOfToday = () => {
   const d = new Date();

@@ -23,6 +23,7 @@ import {
   EntityManager,
   FindOptionsWhere,
   In,
+  IsNull,
   MoreThanOrEqual,
   Not,
   Repository,
@@ -43,6 +44,9 @@ import {
 import { StockService } from '../product/stock.service';
 import { DeviceTypeEnum } from '../device/entities/device.entity';
 import { kitchenOrder } from './kitchen-order';
+
+// Orders taken at a table or seat on the floor map.
+const TABLE_ORDER: FindOptionsWhere<Order> = { tableId: Not(IsNull()) };
 
 const toCents = (amount: number) => Math.round(Number(amount) * 100);
 
@@ -235,7 +239,14 @@ export class OrderService {
   }
 
   async viewOrder(user: Payload, id: string) {
-    const order = await this.getOrder(user, id, this.viewScope(user));
+    const order = await this.getOrder(user, id, this.viewScope(user)).catch(
+      (err: unknown) => {
+        // Whoever verifies money also opens the waiters' table orders.
+        if (hasPermission(user, 'finance.verify'))
+          return this.getOrder(user, id, TABLE_ORDER);
+        throw err;
+      },
+    );
 
     if (!this.onKitchenDisplay(user)) return order;
 
@@ -419,8 +430,20 @@ export class OrderService {
     user: Payload,
     id: string,
     dto: CompleteOrderDto,
-    scope: FindOptionsWhere<Order> = ownRecordsWhere(user),
+    scope?: FindOptionsWhere<Order>,
   ) {
+    // An order from the floor map: the waiter prints the bill and the customer
+    // pays; only someone who verifies money says how it was paid (any waiter's
+    // order). Other sales: the worker who made it, with sales.checkout.
+    const atTable = !scope && (await this.isTableOrder(user, id));
+    if (atTable) {
+      requirePermission(user, 'finance.verify');
+      scope = TABLE_ORDER;
+    } else if (!scope) {
+      requirePermission(user, 'sales.checkout');
+      scope = ownRecordsWhere(user);
+    }
+
     if (dto.payments.length > 1) requirePermission(user, 'sales.split_payment');
 
     const credit = dto.payments
@@ -484,6 +507,8 @@ export class OrderService {
       // still empty) would unlink the payments just added.
       locked!.status = OrderStatusEnum.COMPLETED;
       locked!.company = order.company;
+      // The verifier holds the money now: it counts in their takings.
+      if (atTable) locked!.collectedBy = { id: user.sub } as User;
       await manager.save(Order, locked!);
 
       // Here rather than at checkout, so an abandoned order never touches stock.
@@ -606,6 +631,31 @@ export class OrderService {
 
   private onKitchenDisplay(user: Payload) {
     return user.deviceType === DeviceTypeEnum.KITCHEN_DISPLAY;
+  }
+
+  private async isTableOrder(user: Payload, id: string) {
+    const found = await this.orderRepo.findOne({
+      where: { id, ...companyWhere(user), ...TABLE_ORDER },
+      select: { id: true },
+    });
+    return !!found;
+  }
+
+  // Table orders not paid yet, from every waiter: what the cashier verifies.
+  async ordersToVerify(user: Payload, companyId?: string) {
+    return this.orderRepo.find({
+      where: {
+        ...companyWhere(user, companyId),
+        ...TABLE_ORDER,
+        status: Not(In([OrderStatusEnum.COMPLETED, OrderStatusEnum.CANCELLED])),
+      },
+      relations: {
+        items: { product: { images: true } },
+        user: { employee: true },
+        payments: true,
+      },
+      order: { createdAt: 'ASC' },
+    });
   }
 
   private viewScope(user: Payload): FindOptionsWhere<Order> {

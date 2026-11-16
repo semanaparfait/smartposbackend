@@ -69,6 +69,11 @@ export class Company extends BaseEntity {
   @Column({ name: 'delivery_riders', default: false })
   deliveryRiders!: boolean;
 
+  // Customers get a code the rider needs to finish a delivery. Always sent in
+  // the profile (true or false): the app shows the setting only when it's there.
+  @Column({ name: 'delivery_codes', default: false })
+  deliveryCodes!: boolean;
+
   // The shop prepares orders on a kitchen screen, with its own kitchen staff.
   @Column({ name: 'kitchen_enabled', default: false })
   kitchenEnabled!: boolean;

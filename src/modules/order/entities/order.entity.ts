@@ -27,6 +27,24 @@ export enum OrderTypeEnum {
   DELIVERY = 'DELIVERY',
 }
 
+export interface GeoPosition {
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+}
+
+export interface DeliveryProof {
+  method: 'CODE' | 'QR' | 'NO_CODE';
+  // Metres from the customer's saved place, or from where the rider arrived.
+  distanceM?: number | null;
+  flags?: ('AWAY' | 'NO_GPS' | 'NO_CODE')[];
+  photoUrl?: string | null;
+  // Why there was no code.
+  note?: string | null;
+  // Who marked it delivered, so only they can add the photo.
+  by?: string | null;
+}
+
 // Where a delivery order is; null for in-store orders.
 export enum DeliveryStatusEnum {
   WAITING = 'WAITING', // not sent yet (may still be cooking)
@@ -196,6 +214,78 @@ export class Order extends BaseEntity {
   // Why it couldn't be delivered.
   @Column({ name: 'delivery_problem', type: 'text', nullable: true })
   deliveryProblem!: string | null;
+
+  // ---- Delivery codes (company.deliveryCodes) ----
+  // The customer gets a code and gives it to the rider once they have the
+  // order. The code and the customer's page link are never loaded by default
+  // (select: false): order responses and live events reach riders too. Only
+  // DeliveryService adds them back, for the till and owner.
+
+  @Column({ name: 'delivery_code_required', default: false })
+  deliveryCodeRequired!: boolean;
+
+  @Column({
+    name: 'delivery_code',
+    type: 'varchar',
+    length: 8,
+    nullable: true,
+    select: false,
+  })
+  deliveryCode?: string | null;
+
+  // Wrong codes entered; at MAX_CODE_TRIES the code stops working.
+  @Column({ name: 'delivery_code_tries', type: 'int', default: 0 })
+  deliveryCodeTries!: number;
+
+  // The customer's page: /d/<token>.
+  @Index('UQ_orders_delivery_track_token', { unique: true })
+  @Column({
+    name: 'delivery_track_token',
+    type: 'varchar',
+    length: 48,
+    nullable: true,
+    select: false,
+  })
+  deliveryTrackToken?: string | null;
+
+  @Column({ name: 'notify_by', type: 'varchar', length: 10, nullable: true })
+  notifyBy!: 'WHATSAPP' | 'SMS' | null;
+
+  @Column({
+    name: 'customer_language',
+    type: 'varchar',
+    length: 4,
+    nullable: true,
+  })
+  customerLanguage!: 'en' | 'rw' | 'fr' | 'sw' | null;
+
+  @Column({ name: 'code_sent_at', type: 'timestamptz', nullable: true })
+  codeSentAt!: Date | null;
+
+  @Column({ name: 'arrived_at', type: 'timestamptz', nullable: true })
+  arrivedAt!: Date | null;
+
+  // Where the rider said they arrived, and where it was confirmed. Kept out of
+  // responses: only the distance and flags in deliveryProof are shown.
+  @Column({
+    name: 'arrived_position',
+    type: 'jsonb',
+    nullable: true,
+    select: false,
+  })
+  arrivedPosition?: GeoPosition | null;
+
+  @Column({
+    name: 'delivered_position',
+    type: 'jsonb',
+    nullable: true,
+    select: false,
+  })
+  deliveredPosition?: GeoPosition | null;
+
+  // How it was confirmed: by code or QR, or without one (flagged).
+  @Column({ name: 'delivery_proof', type: 'jsonb', nullable: true })
+  deliveryProof!: DeliveryProof | null;
 
   @Index('IDX_orders_user')
   @ManyToOne(() => User, (user) => user.orders, { nullable: true })

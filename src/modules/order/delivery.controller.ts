@@ -5,16 +5,21 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Put,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConsumes,
   ApiOperation,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
+import { FileUploadInterceptor } from 'src/common/interceptors/file-upload.interceptor';
 import { AuthGuard, RolesGuard } from 'src/common/guards';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
@@ -25,6 +30,8 @@ import { UserRole } from '../user/entities/user.entity';
 import { DeliveryService } from './delivery.service';
 import { OrderIdParam } from './dto/request/order-param.dto';
 import {
+  ArrivedDto,
+  CodeSentDto,
   DeliveredDto,
   DeliverySettingsDto,
   NotDeliveredDto,
@@ -121,6 +128,57 @@ export class DeliveryController {
     @Body() dto: DeliveredDto,
   ) {
     return this.service.delivered(user, orderId, dto);
+  }
+
+  @Patch(':orderId/arrived')
+  @AnyEmployee()
+  @ApiOperation({
+    summary: "The rider is at the customer's door (with their position)",
+  })
+  arrived(
+    @User() user: Payload,
+    @Param() { orderId }: OrderIdParam,
+    @Body() dto: ArrivedDto,
+  ) {
+    return this.service.arrived(user, orderId, dto);
+  }
+
+  @Patch(':orderId/code-sent')
+  @AnyEmployee()
+  @ApiOperation({
+    summary: 'The till sent the customer their delivery code',
+  })
+  codeSent(
+    @User() user: Payload,
+    @Param() { orderId }: OrderIdParam,
+    @Body() dto: CodeSentDto,
+  ) {
+    return this.service.codeSent(user, orderId, dto);
+  }
+
+  @Post(':orderId/send-code')
+  @AnyEmployee()
+  @ApiOperation({
+    summary:
+      'Send the customer their code by SMS from the server (503 if SMS is not set up)',
+  })
+  sendCode(@User() user: Payload, @Param() { orderId }: OrderIdParam) {
+    return this.service.sendCode(user, orderId);
+  }
+
+  @Post(':orderId/proof-photo')
+  @AnyEmployee()
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(new FileUploadInterceptor('photo', 1, false))
+  @ApiOperation({
+    summary: 'Photo of the handover, for a delivery finished without the code',
+  })
+  proofPhoto(
+    @User() user: Payload,
+    @Param() { orderId }: OrderIdParam,
+    @UploadedFile() photo?: Express.Multer.File,
+  ) {
+    return this.service.proofPhoto(user, orderId, photo);
   }
 
   @Patch(':orderId/not-delivered')

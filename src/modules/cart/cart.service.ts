@@ -180,6 +180,10 @@ export class CartService {
     const created = await this.orderService.getOrder(actor, order.id);
     this.realtime.orderCreated(created);
     this.realtime.orderToPay(actor.deviceId, created);
+    // A delivery with a code: the customer gets it by SMS straight away (when
+    // the server has an SMS provider). Not awaited: the sale never waits on it.
+    if (created.deliveryCodeRequired)
+      void this.delivery.autoSendCode(created.id);
 
     return created;
   }

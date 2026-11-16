@@ -15,14 +15,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { VenueEvent } from './venue.events';
 import { VenueLayout, VenueTable } from './venue.entity';
 import { SaveLayoutDto, UpdateTableDto } from './venue.dto';
-
-// What a seat is called on orders and receipts, by its type on the map.
-const KIND: Record<string, string> = {
-  'bar-stool': 'Bar stool',
-  armchair: 'Lounge chair',
-  booth: 'Booth',
-  'high-table': 'High table',
-};
+import { placeInLayout } from './venue.place';
 
 // The order summary shown on a table, without loading all its items.
 export interface TableOrder {
@@ -253,38 +246,7 @@ export class VenueService {
     const saved = await this.layouts.findOne({
       where: { company: { id: companyId } },
     });
-    type Box = { x: number; y: number; w: number; h: number };
-    type MapItem = Box & { id: string; type: string; label?: string };
-    type MapFloor = {
-      name?: string;
-      items?: MapItem[];
-      rooms?: (Box & { name?: string })[];
-    };
-    const floors = (saved?.layout as { floors?: MapFloor[] })?.floors ?? [];
-    for (const floor of floors) {
-      const item = floor.items?.find((i) => i.id === tableId);
-      if (!item) continue;
-      const cx = item.x + item.w / 2;
-      const cy = item.y + item.h / 2;
-      const room = floor.rooms?.find(
-        (r) =>
-          r.name &&
-          cx >= r.x &&
-          cx <= r.x + r.w &&
-          cy >= r.y &&
-          cy <= r.y + r.h,
-      );
-      return {
-        name: (item.label || '').slice(0, 40) || null,
-        kind: KIND[item.type] ?? 'Table',
-        area:
-          (room?.name || (floors.length > 1 ? floor.name : '') || '').slice(
-            0,
-            80,
-          ) || null,
-      };
-    }
-    return null;
+    return placeInLayout(saved?.layout, tableId);
   }
 
   private async ordersOf(rows: VenueTable[]) {
