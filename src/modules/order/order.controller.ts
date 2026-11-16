@@ -109,7 +109,13 @@ export class OrderController {
     @Param() { orderId }: OrderIdParam,
     @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.service.changeStatus(user, orderId, dto.status, dto.stationId);
+    return this.service.changeStatus(
+      user,
+      orderId,
+      dto.status,
+      dto.stationId,
+      dto.pin,
+    );
   }
 
   @Patch(':orderId/served')

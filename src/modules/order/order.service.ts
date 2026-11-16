@@ -53,6 +53,7 @@ import {
   removeFromParts,
 } from './kitchen-order';
 import { Station } from '../station/station.entity';
+import { KitchenStaffService, Preparer } from './kitchen-staff.service';
 
 // Orders taken at a table or seat on the floor map.
 const TABLE_ORDER: FindOptionsWhere<Order> = { tableId: Not(IsNull()) };
@@ -80,6 +81,8 @@ export class OrderService {
     private readonly realtime: RealtimeService,
 
     private readonly stock: StockService,
+
+    private readonly kitchenStaff: KitchenStaffService,
   ) {}
 
   async createOrder(dto: CreateOrderDto, repo: EntityManager) {
@@ -296,11 +299,14 @@ export class OrderService {
   // recorded. Completed and cancelled orders are final.
   // With stations, `stationId` moves only that station's part (a station's
   // screen); without it, every part not yet done (a screen showing all stations).
+  // On a kitchen screen, starting an order records the cook: with several
+  // cooks, the one whose `pin` is given.
   async changeStatus(
     user: Payload,
     id: string,
     status: OrderStatusEnum,
     stationId?: string,
+    pin?: string,
   ) {
     if (status === OrderStatusEnum.COMPLETED)
       throw new BadRequestException(
@@ -317,13 +323,34 @@ export class OrderService {
     const order = await this.getOrder(user, id, this.viewScope(user));
 
     if (hasStations(order))
-      return this.moveParts(user, order, status, stationId);
+      return this.moveParts(user, order, status, stationId, pin);
+
+    const paidEarly =
+      order.status === OrderStatusEnum.COMPLETED && !!order.kitchenStatus;
+    if (!paidEarly) assertOpen(order);
+
+    // Who starts it: asked before anything changes.
+    const starting =
+      status === OrderStatusEnum.PREPARING &&
+      (paidEarly
+        ? order.kitchenStatus === KitchenStatusEnum.PENDING
+        : order.status === OrderStatusEnum.PENDING);
+    if (starting && this.onKitchenDisplay(user)) {
+      const cook = await this.kitchenStaff.preparer(
+        user,
+        order.company.id,
+        pin,
+      );
+      order.preparedBy = {
+        id: cook.id,
+        name: cook.name,
+        at: new Date().toISOString(),
+      };
+      await this.orderRepo.update(order.id, { preparedBy: order.preparedBy });
+    }
 
     // A delivery paid before its food was ready: the kitchen moves its own step.
-    if (order.status === OrderStatusEnum.COMPLETED && order.kitchenStatus)
-      return this.moveKitchenStep(user, order, status);
-
-    assertOpen(order);
+    if (paidEarly) return this.moveKitchenStep(user, order, status);
 
     if (order.status === OrderStatusEnum.SERVED)
       throw new BadRequestException('Order is already served');
@@ -346,6 +373,7 @@ export class OrderService {
     order: Order,
     status: OrderStatusEnum,
     stationId?: string,
+    pin?: string,
   ) {
     if (
       ![
@@ -367,15 +395,45 @@ export class OrderService {
       throw new NotFoundException('This order has nothing for this station');
     if (stationId && parts[stationId].status === 'SERVED')
       throw new BadRequestException('This part was already served');
-    const ids = stationId
+    let ids = stationId
       ? [stationId]
       : Object.keys(parts).filter((id) => parts[id].status !== 'SERVED');
+
+    // On a kitchen screen: who does it (the PIN's cook when starting), and only
+    // on their own station.
+    let cook: Preparer | null = null;
+    if (this.onKitchenDisplay(user)) {
+      const starting =
+        status === OrderStatusEnum.PREPARING &&
+        ids.some((id) => parts[id].status === 'PENDING');
+      cook = starting
+        ? await this.kitchenStaff.preparer(user, order.company.id, pin)
+        : await this.kitchenStaff.signedIn(user);
+      if (!stationId && cook.stationId) {
+        ids = ids.filter((id) => id === cook!.stationId);
+        if (!ids.length)
+          throw new NotFoundException(
+            'This order has nothing for your station',
+          );
+      }
+      for (const id of ids) await this.kitchenStaff.assertStation(cook, id);
+    }
 
     const nowReady = ids.filter(
       (id) => status === OrderStatusEnum.READY && parts[id].status !== 'READY',
     );
+    const at = new Date().toISOString();
     for (const id of ids)
-      parts[id] = { ...parts[id], status: status as StationPartStatus };
+      parts[id] = {
+        ...parts[id],
+        status: status as StationPartStatus,
+        // Starting it: the cook is recorded on this station's part.
+        ...(cook &&
+        status === OrderStatusEnum.PREPARING &&
+        parts[id].status === 'PENDING'
+          ? { preparedBy: { id: cook.id, name: cook.name, at } }
+          : {}),
+      };
 
     order.stationStatus = parts;
     applyParts(order);

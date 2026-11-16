@@ -92,6 +92,11 @@ export class Employee extends BaseEntity {
   })
   creditLimit!: number | null;
 
+  // A cook's kitchen station: they sign in on its screen and start only its
+  // orders. null = any station.
+  @Column({ name: 'station_id', type: 'uuid', nullable: true })
+  stationId!: string | null;
+
   // Given on top of the role, for this employee only.
   @Column('text', { name: 'extra_permissions', array: true, default: '{}' })
   extraPermissions!: string[];

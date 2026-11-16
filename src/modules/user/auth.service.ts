@@ -32,6 +32,7 @@ import { DeviceService } from '../device/device.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { randomUUID } from 'crypto';
 import { RefreshTokenService } from './refresh-token.service';
+import { StationService } from '../station/station.service';
 import { FEATURES, featuresOf } from '../company/features';
 import { COMPANY_TERMINATED } from 'src/common/guards/roles.guard';
 
@@ -56,6 +57,8 @@ export class AuthService {
     private readonly inbox: InboxService,
 
     private readonly refreshTokens: RefreshTokenService,
+
+    private readonly stations: StationService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -322,6 +325,11 @@ export class AuthService {
     return await this.userService.updateProfile(userId, dto, picture);
   }
 
+  // Station names by id, for messages.
+  private async stationNames(ids: string[]) {
+    return this.stations.namesOf(ids);
+  }
+
   // Each worker signs in only where they work: a kitchen display is for kitchen
   // staff and a rider phone for riders; a till is not for them once the shop has
   // such a device. Owners sign in anywhere but a customer display.
@@ -342,6 +350,21 @@ export class AuthService {
       throw new ForbiddenException(
         'This is the kitchen display. Only kitchen staff sign in here',
       );
+
+    // A cook with a station signs in on that station's screen, or one showing
+    // all stations (where they can still only start their own station's orders).
+    const cookStation = user.employee?.stationId;
+    if (
+      device.type === DeviceTypeEnum.KITCHEN_DISPLAY &&
+      cookStation &&
+      device.stationId &&
+      device.stationId !== cookStation
+    ) {
+      const names = await this.stationNames([cookStation, device.stationId]);
+      throw new ForbiddenException(
+        `You work at ${names[cookStation] ?? 'another station'}. This screen is for ${names[device.stationId] ?? 'another station'}`,
+      );
+    }
 
     if (
       device.type === DeviceTypeEnum.RIDER_PHONE &&

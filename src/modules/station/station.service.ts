@@ -96,6 +96,13 @@ export class StationService {
       );
   }
 
+  async namesOf(ids: string[]): Promise<Record<string, string>> {
+    const found = ids.length
+      ? await this.repo.find({ where: { id: In(ids) } })
+      : [];
+    return Object.fromEntries(found.map((s) => [s.id, s.name]));
+  }
+
   // Checks a station id given for a category, product or device.
   async assertInCompany(companyId: string, stationId: string) {
     const found = await this.repo.exists({

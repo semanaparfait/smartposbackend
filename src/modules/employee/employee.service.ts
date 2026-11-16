@@ -48,6 +48,7 @@ const payOf = (dto: { payType?: PayTypeEnum; perDelivery?: number }) => {
   };
 };
 
+import { StationService } from '../station/station.service';
 @Injectable()
 export class EmployeeService {
   constructor(
@@ -65,6 +66,8 @@ export class EmployeeService {
     private readonly fileService: FileService,
 
     private readonly realtime: RealtimeService,
+
+    private readonly stations: StationService,
   ) {}
 
   async createRole(user: Payload, dto: CreateEmployeeRoleDto) {
@@ -161,6 +164,8 @@ export class EmployeeService {
     const role = await this.getCompanyRole(dto.roleId, company.id);
     assertCanGrant(user, role.permissions);
     const pay = payOf(dto);
+    if (dto.stationId)
+      await this.stations.assertInCompany(company.id, dto.stationId);
 
     const employee = await this.fileService.createWithImage(picture, () =>
       this.employeeRepo.save(
@@ -172,6 +177,7 @@ export class EmployeeService {
           payType: pay.payType,
           perDelivery: pay.perDelivery,
           shift: dto.shift,
+          stationId: dto.stationId ?? null,
           role: { id: role.id },
           company: { id: company.id },
         }),
@@ -253,6 +259,12 @@ export class EmployeeService {
       perDelivery: pay.perDelivery,
       shift: dto.shift ?? employee.shift,
     });
+
+    if (dto.stationId !== undefined) {
+      if (dto.stationId)
+        await this.stations.assertInCompany(employee.company.id, dto.stationId);
+      employee.stationId = dto.stationId;
+    }
 
     await this.employeeRepo.save(employee);
 

@@ -9,7 +9,7 @@ import {
   Min,
 } from 'class-validator';
 import { PayTypeEnum, ShiftType } from '../../entities/employee.entity';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 export class CreateEmployeeDto {
   @ApiProperty({
@@ -58,6 +58,19 @@ export class CreateEmployeeDto {
   @ApiProperty()
   @IsUUID()
   roleId!: string;
+
+  // Sent as form data: "" (or "null") = any station.
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: "A cook's kitchen station; empty = any station",
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' || value === 'null' ? null : value,
+  )
+  @IsOptional()
+  @IsUUID()
+  stationId?: string | null;
 
   @ApiProperty({
     required: false,

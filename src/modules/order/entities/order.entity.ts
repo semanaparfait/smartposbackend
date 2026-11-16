@@ -34,6 +34,13 @@ export type StationPartStatus = 'PENDING' | 'PREPARING' | 'READY' | 'SERVED';
 export interface StationPart {
   status: StationPartStatus;
   items: string[] | null;
+  // The cook who started it (by PIN when there are several) and when.
+  preparedBy?: PreparedBy | null;
+}
+export interface PreparedBy {
+  id: string;
+  name: string;
+  at: string;
 }
 export type StationStatus = Record<string, StationPart>;
 
@@ -225,6 +232,11 @@ export class Order extends BaseEntity {
   // or nothing goes to a station: `status` then works as it always did.
   @Column({ name: 'station_status', type: 'jsonb', nullable: true })
   stationStatus!: StationStatus | null;
+
+  // Without stations: the cook who started preparing it. With stations, each
+  // part keeps its own (stationStatus[...].preparedBy).
+  @Column({ name: 'prepared_by', type: 'jsonb', nullable: true })
+  preparedBy!: PreparedBy | null;
 
   // Why it couldn't be delivered.
   @Column({ name: 'delivery_problem', type: 'text', nullable: true })
