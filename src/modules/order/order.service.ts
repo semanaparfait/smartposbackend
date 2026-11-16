@@ -671,9 +671,14 @@ export class OrderService {
         ),
       );
 
-      // A delivery paid before its food is ready keeps the kitchen's step.
+      // Paid before its food is ready (a delivery, a counter sale paid first, a
+      // table bill printed early): the kitchen keeps its step. Paying never
+      // means the food was made. Only where a kitchen screen is used (or for a
+      // delivery, as before): otherwise nobody would ever mark it ready.
       locked!.kitchenStatus =
-        locked!.type === OrderTypeEnum.DELIVERY &&
+        (order.company.kitchenEnabled ||
+          hasStations(locked!) ||
+          locked!.type === OrderTypeEnum.DELIVERY) &&
         order.items.some((i) => i.stationId || i.product?.sendToKitchen) &&
         (locked!.status === OrderStatusEnum.PENDING ||
           locked!.status === OrderStatusEnum.PREPARING)
