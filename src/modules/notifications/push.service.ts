@@ -22,7 +22,8 @@ export type PushScreen =
   | 'money-checks'
   | 'bookings'
   | 'subscription'
-  | 'day-closing';
+  | 'day-closing'
+  | 'orders';
 
 export interface PushMessage {
   title: string;

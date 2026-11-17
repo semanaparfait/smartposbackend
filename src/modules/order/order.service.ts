@@ -54,6 +54,7 @@ import {
 } from './kitchen-order';
 import { Station } from '../station/station.entity';
 import { KitchenStaffService, Preparer } from './kitchen-staff.service';
+import { PushService } from '../notifications/push.service';
 
 // Orders taken at a table or seat on the floor map.
 const TABLE_ORDER: FindOptionsWhere<Order> = { tableId: Not(IsNull()) };
@@ -83,6 +84,8 @@ export class OrderService {
     private readonly stock: StockService,
 
     private readonly kitchenStaff: KitchenStaffService,
+
+    private readonly push: PushService,
   ) {}
 
   async createOrder(dto: CreateOrderDto, repo: EntityManager) {
@@ -335,12 +338,14 @@ export class OrderService {
       (paidEarly
         ? order.kitchenStatus === KitchenStatusEnum.PENDING
         : order.status === OrderStatusEnum.PENDING);
+    let startedBy: Preparer | null = null;
     if (starting && this.onKitchenDisplay(user)) {
       const cook = await this.kitchenStaff.preparer(
         user,
         order.company.id,
         pin,
       );
+      startedBy = cook;
       order.preparedBy = {
         id: cook.id,
         name: cook.name,
@@ -348,6 +353,9 @@ export class OrderService {
       };
       await this.orderRepo.update(order.id, { preparedBy: order.preparedBy });
     }
+
+    // The waiter hears that the kitchen took it.
+    if (startedBy) void this.tellWaiter(order, startedBy);
 
     // A delivery paid before its food was ready: the kitchen moves its own step.
     if (paidEarly) return this.moveKitchenStep(user, order, status);
@@ -422,6 +430,11 @@ export class OrderService {
     const nowReady = ids.filter(
       (id) => status === OrderStatusEnum.READY && parts[id].status !== 'READY',
     );
+    // Parts this move starts (new to preparing).
+    const started = ids.filter(
+      (id) =>
+        status === OrderStatusEnum.PREPARING && parts[id].status === 'PENDING',
+    );
     const at = new Date().toISOString();
     for (const id of ids)
       parts[id] = {
@@ -449,6 +462,13 @@ export class OrderService {
         : await this.getOrder(user, order.id, {});
     this.realtime.orderUpdated(saved);
 
+    // The waiter hears that the kitchen took it ("Eric started Grill").
+    if (cook && started.length) {
+      const names = await this.kitchenStaff.stationNames(started);
+      for (const id of started)
+        void this.tellWaiter(saved, cook, { id, name: names[id] ?? '' });
+    }
+
     // One alert per part, so drinks go out while the grill is still busy.
     if (nowReady.length) {
       const stations = await this.dataSource
@@ -462,6 +482,40 @@ export class OrderService {
     }
 
     return this.onKitchenDisplay(user) ? (kitchenOrder(saved) ?? saved) : saved;
+  }
+
+  // "Eric started preparing your order": live on the waiter's till, or as a
+  // phone notification when their app is closed. Never throws.
+  private async tellWaiter(
+    order: Order,
+    cook: Preparer,
+    station?: { id: string; name: string },
+  ) {
+    try {
+      const waiterId = order.user?.id;
+      // The cook took their own order: nobody to tell.
+      if (!waiterId || waiterId === cook.id) return;
+      const delivered = await this.realtime.orderPreparing(
+        order,
+        { id: cook.id, name: cook.name },
+        station,
+      );
+      if (delivered) return;
+      const place = order.tableName
+        ? `Table ${order.tableName}`
+        : order.type === OrderTypeEnum.DELIVERY
+          ? 'Delivery'
+          : 'In store';
+      const number = `#${order.id.replace(/-/g, '').slice(-6).toUpperCase()}`;
+      await this.push.send([waiterId], {
+        title: `${cook.name || 'The kitchen'} is preparing your order`,
+        body: `${place} · ${number}${station?.name ? ` · ${station.name}` : ''}`,
+        screen: 'orders',
+        data: { orderId: order.id },
+      });
+    } catch {
+      // A notification never stops the kitchen.
+    }
   }
 
   private async moveKitchenStep(

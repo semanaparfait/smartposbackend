@@ -94,6 +94,15 @@ export class KitchenStaffService {
     throw new BadRequestException('Wrong PIN. Try again');
   }
 
+  async stationNames(ids: string[]): Promise<Record<string, string>> {
+    const found = ids.length
+      ? await this.dataSource
+          .getRepository(Station)
+          .findBy(ids.map((id) => ({ id })))
+      : [];
+    return Object.fromEntries(found.map((s) => [s.id, s.name]));
+  }
+
   // A cook with a station only works on that station's part.
   async assertStation(cook: Preparer, stationId: string) {
     if (!cook.stationId || cook.stationId === stationId) return;

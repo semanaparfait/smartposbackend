@@ -61,6 +61,24 @@ export class RealtimeService {
   }
 
   // `stationId`: only that station's part was taken out (null = the whole order).
+  // A cook took the order (started preparing it). Tells the worker who took
+  // it; false when they aren't connected (the caller then sends a push).
+  async orderPreparing(
+    order: Order,
+    cook: { id: string; name: string },
+    station?: { id: string; name: string } | null,
+  ) {
+    const waiterId = order.user?.id;
+    if (!waiterId || !(await this.gateway.isConnected(waiterId))) return false;
+    this.gateway.emit(Rooms.user(waiterId), RealtimeEvent.ORDER_PREPARING, {
+      orderId: order.id,
+      order,
+      station: station ?? null,
+      cook,
+    });
+    return true;
+  }
+
   orderServed(order: Order, by: Payload, stationId?: string) {
     if (order.company?.id)
       this.gateway.emitToStaff(order.company.id, RealtimeEvent.ORDER_SERVED, {

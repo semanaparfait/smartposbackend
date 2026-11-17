@@ -12,6 +12,9 @@ export const RealtimeEvent = {
   // when that worker is offline (wholeCompany: true). The app keeps sounding until
   // someone calls PATCH /orders/:id/served.
   ORDER_READY: 'order.ready',
+  // A cook started preparing an order: { orderId, order, station, cook }. Goes
+  // to the worker who took it, so they know the kitchen has it.
+  ORDER_PREPARING: 'order.preparing',
   // Stops that sound everywhere: { orderId, servedBy: { id, name } }. To everyone
   // signed in at the company except kitchen displays.
   ORDER_SERVED: 'order.served',
