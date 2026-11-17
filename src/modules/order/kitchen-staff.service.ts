@@ -12,6 +12,8 @@ import { LoginThrottleService } from 'src/util/login-throttle.service';
 import { User, UserRole } from '../user/entities/user.entity';
 import { Employee } from '../employee/entities/employee.entity';
 import { Station } from '../station/station.entity';
+import { Device } from '../device/entities/device.entity';
+import { SignInLockService } from '../device/sign-in-lock.service';
 
 // Who prepares an order. With more than one cook, the one starting an order
 // types their PIN on the kitchen screen, so the owner knows who made what.
@@ -30,6 +32,7 @@ export class KitchenStaffService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly throttle: LoginThrottleService,
+    private readonly signInLock: SignInLockService,
   ) {}
 
   // Active workers whose role lets them prepare orders, with their PIN hash.
@@ -77,11 +80,22 @@ export class KitchenStaffService {
     if (!pin)
       throw new HttpException(PIN_NEEDED, HttpStatus.PRECONDITION_REQUIRED);
 
-    const key = `kitchen-pin:${user.deviceId ?? user.sub}`;
-    this.throttle.assertAllowed(key);
+    // Wrong PINs count toward the device's sign-in lock, like the login screen's.
+    // Without a device (shouldn't happen on a kitchen screen) a memory limit applies.
+    const device = user.deviceId
+      ? await this.dataSource.getRepository(Device).findOne({
+          where: { id: user.deviceId },
+          relations: { company: true },
+        })
+      : null;
+    const key = `kitchen-pin:${user.sub}`;
+    if (device) this.signInLock.assertOpen(device);
+    else this.throttle.assertAllowed(key);
+
     for (const cook of staff) {
       if (cook.pin && (await compareHashContent(pin, cook.pin))) {
-        this.throttle.reset(key);
+        if (device) await this.signInLock.succeeded(device);
+        else this.throttle.reset(key);
         return {
           id: cook.id,
           name: cook.employee?.name ?? cook.name,
@@ -89,8 +103,14 @@ export class KitchenStaffService {
         };
       }
     }
-    this.throttle.recordFailure(key);
     // Not 401: that would sign the kitchen screen out.
+    if (device)
+      return this.signInLock.failed(
+        device,
+        'Wrong PIN. Try again',
+        HttpStatus.BAD_REQUEST,
+      );
+    this.throttle.recordFailure(key);
     throw new BadRequestException('Wrong PIN. Try again');
   }
 

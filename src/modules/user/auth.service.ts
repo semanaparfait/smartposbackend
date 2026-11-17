@@ -29,6 +29,7 @@ import { Payload, TokenService } from 'src/util/token.service';
 import { LoginThrottleService } from 'src/util/login-throttle.service';
 import { UserService } from './user.service';
 import { DeviceService } from '../device/device.service';
+import { SignInLockService } from '../device/sign-in-lock.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { randomUUID } from 'crypto';
 import { RefreshTokenService } from './refresh-token.service';
@@ -59,11 +60,21 @@ export class AuthService {
     private readonly refreshTokens: RefreshTokenService,
 
     private readonly stations: StationService,
+
+    private readonly signInLock: SignInLockService,
   ) {}
 
   async login(dto: LoginDto) {
+    // Per account, across devices: higher than the device lock so one device's
+    // lock (which the owner can lift) comes first.
     const throttleKey = `email:${dto.email.toLowerCase()}`;
-    this.throttle.assertAllowed(throttleKey);
+    this.throttle.assertAllowed(throttleKey, 10);
+
+    // The app sends its device: wrong passwords there count toward its lock.
+    const lockDevice = dto.deviceId
+      ? await this.deviceService.findOne({ deviceId: dto.deviceId })
+      : null;
+    if (lockDevice) this.signInLock.assertOpen(lockDevice);
 
     const user = await this.userService.findWithSecrets({
       active: true,
@@ -73,10 +84,13 @@ export class AuthService {
     // Check the password before anything else so failures don't reveal which emails exist.
     if (!user || !(await compareHashContent(dto.password, user.password))) {
       this.throttle.recordFailure(throttleKey);
-      throw new UnauthorizedException('Invalid credentials');
+      if (lockDevice)
+        await this.signInLock.failed(lockDevice, 'Wrong email or password');
+      throw new UnauthorizedException('Wrong email or password');
     }
 
     this.throttle.reset(throttleKey);
+    if (lockDevice) await this.signInLock.succeeded(lockDevice);
 
     if (user.role === UserRole.EMPLOYEE)
       throw new UnauthorizedException('Employees must login using PIN');
@@ -147,14 +161,12 @@ export class AuthService {
   }
 
   async pinLogin(dto: PinLoginDto) {
-    // A 6-digit PIN is easy to guess, so failed attempts are limited per device.
-    const throttleKey = `pin:${dto.deviceId}`;
-    this.throttle.assertAllowed(throttleKey);
-
     const device = await this.deviceService.getOne({
       deviceId: dto.deviceId,
       registrationStatus: RegistrationStatusEnum.REGISTERED,
     });
+    // A 6-digit PIN is easy to guess, so wrong ones lock the device for a while.
+    this.signInLock.assertOpen(device);
 
     if (!device.company)
       throw new UnauthorizedException('Device is not registered');
@@ -177,14 +189,16 @@ export class AuthService {
       }
     }
 
-    if (!authenticatedUser) {
-      this.throttle.recordFailure(throttleKey);
-      throw new UnauthorizedException('Invalid PIN');
-    }
+    if (!authenticatedUser) return this.signInLock.failed(device, 'Wrong PIN');
 
-    this.throttle.reset(throttleKey);
+    await this.signInLock.succeeded(device);
 
     return this.openSession(authenticatedUser, device);
+  }
+
+  // For the sign-in screen: is this device locked, and how many tries are left?
+  lockStatus(deviceId: string) {
+    return this.signInLock.status(deviceId);
   }
 
   async logout(user: Payload) {

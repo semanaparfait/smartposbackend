@@ -119,6 +119,18 @@ export class Device extends BaseEntity {
   })
   secretHash!: string | null;
 
+  // Sign-in lock (see SignInLockService): wrong PINs/passwords in a row, how
+  // many locks since the last good sign-in (sets the next lock's length), and
+  // until when sign-in is refused.
+  @Column({ name: 'failed_sign_ins', type: 'int', default: 0 })
+  failedSignIns!: number;
+
+  @Column({ name: 'lock_count', type: 'int', default: 0 })
+  lockCount!: number;
+
+  @Column({ name: 'locked_until', type: 'timestamp', nullable: true })
+  lockedUntil!: Date | null;
+
   @OneToMany(() => DeviceActivity, (activity) => activity.device)
   activities!: DeviceActivity[];
 

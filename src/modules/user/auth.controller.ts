@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Patch,
   Post,
   Req,
@@ -100,6 +101,17 @@ export class AuthController {
   @ApiOperation({ summary: 'Login with PIN' })
   pinLogin(@Body() dto: PinLoginDto) {
     return this.authService.pinLogin(dto);
+  }
+
+  @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @Get('lock-status/:deviceId')
+  @ApiOperation({
+    summary:
+      'Sign-in screen: is this device locked after wrong PINs/passwords?',
+  })
+  lockStatus(@Param('deviceId') deviceId: string) {
+    return this.authService.lockStatus(deviceId);
   }
 
   @Public()

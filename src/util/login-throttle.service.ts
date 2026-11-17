@@ -13,7 +13,8 @@ export class LoginThrottleService {
     { count: number; resetAt: number }
   >();
 
-  assertAllowed(key: string) {
+  // `max`: failures allowed in the window (default MAX_FAILURES).
+  assertAllowed(key: string, max = MAX_FAILURES) {
     const entry = this.failures.get(key);
     if (!entry) return;
 
@@ -22,7 +23,7 @@ export class LoginThrottleService {
       return;
     }
 
-    if (entry.count >= MAX_FAILURES) {
+    if (entry.count >= max) {
       const minutes = Math.ceil((entry.resetAt - Date.now()) / 60000);
       throw new HttpException(
         `Too many failed attempts, try again in ${minutes} minute(s)`,

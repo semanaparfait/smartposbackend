@@ -27,11 +27,17 @@ export const RealtimeEvent = {
   // { deviceId, online } when a device's first socket connects or its last
   // one disconnects.
   DEVICE_PRESENCE: 'device.presence',
+  // { device } when a device locks after too many wrong PINs or passwords.
+  DEVICE_LOCKED: 'device.locked',
 
   // To the device itself (terminal socket and anyone signed in on it):
   // { status, type, displayForId } on connect and whenever it is approved,
   // rejected, disabled, enabled or given another type.
   DEVICE_STATUS: 'device.status',
+  // Sign-in lock on this device: signin.locked { lockedUntil, retryAfter,
+  // message }; signin.unlocked {} when it ends early (owner / super admin).
+  SIGNIN_LOCKED: 'signin.locked',
+  SIGNIN_UNLOCKED: 'signin.unlocked',
 
   // To the customer displays paired with the till that made the change. Only
   // what a customer may see (names, quantities, selling prices, totals).

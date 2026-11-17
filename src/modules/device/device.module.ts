@@ -8,15 +8,17 @@ import { DeviceActivity } from './entities/device-activity.entity';
 import { CompanyModule } from '../company/company.module';
 import { DeviceActivityInterceptor } from './device-activity.interceptor';
 import { LoggerService } from 'src/common/logger/logger.service';
+import { SignInLockService } from './sign-in-lock.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Device, DeviceActivity]), CompanyModule],
   controllers: [DeviceController],
   providers: [
     DeviceService,
+    SignInLockService,
     LoggerService,
     { provide: APP_INTERCEPTOR, useClass: DeviceActivityInterceptor },
   ],
-  exports: [DeviceService],
+  exports: [DeviceService, SignInLockService],
 })
 export class DeviceModule {}

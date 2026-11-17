@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DeviceModule } from '../device/device.module';
 import { OrderService } from './order.service';
 import { OrderController } from './order.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -17,6 +18,7 @@ import { LoginThrottleService } from 'src/util/login-throttle.service';
     TypeOrmModule.forFeature([Order, DeliveryPin]),
     ProductModule,
     FileModule,
+    DeviceModule,
   ],
   controllers: [OrderController, DeliveryController, DeliveryPageController],
   providers: [

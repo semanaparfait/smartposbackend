@@ -100,6 +100,37 @@ export class RealtimeService {
     });
   }
 
+  // Too many wrong tries: owners see it, and every screen on the device locks.
+  deviceLocked(
+    device: Device,
+    lock: { lockedUntil: Date; retryAfter: number; message: string },
+  ) {
+    this.gateway.emit(
+      this.deviceManagers(device.company?.id),
+      RealtimeEvent.DEVICE_LOCKED,
+      { device },
+    );
+    this.gateway.emit(
+      Rooms.device(device.id),
+      RealtimeEvent.SIGNIN_LOCKED,
+      lock,
+    );
+  }
+
+  // Unlocked early: owners' lists update, and the locked screen opens at once.
+  signInUnlocked(device: Device) {
+    this.gateway.emit(
+      this.deviceManagers(device.company?.id),
+      RealtimeEvent.DEVICE_UPDATED,
+      { device },
+    );
+    this.gateway.emit(
+      Rooms.device(device.id),
+      RealtimeEvent.SIGNIN_UNLOCKED,
+      {},
+    );
+  }
+
   deviceRequested(device: Device) {
     this.gateway.emit(
       this.deviceManagers(device.company?.id),

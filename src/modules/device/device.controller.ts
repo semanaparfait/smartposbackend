@@ -34,6 +34,7 @@ import { UpdateDeviceTypeDto } from './dto/request/update-device-type.dto';
 import { UpdateDeviceMomoCodeDto } from './dto/request/update-device-momo-code.dto';
 import { UpdateDeviceStationDto } from './dto/request/update-device-station.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
+import { SignInLockService } from './sign-in-lock.service';
 
 @ApiTags('Devices')
 @UseGuards(AuthGuard, RolesGuard)
@@ -41,7 +42,10 @@ import { RequirePermissions } from 'src/common/decorators/permissions.decorator'
 @Controller('devices')
 @ApiBearerAuth()
 export class DeviceController {
-  constructor(private readonly service: DeviceService) {}
+  constructor(
+    private readonly service: DeviceService,
+    private readonly signInLock: SignInLockService,
+  ) {}
 
   @Public()
   @Get(':deviceId/verify')
@@ -155,6 +159,21 @@ export class DeviceController {
   @ApiOperation({ summary: 'Enable device' })
   enable(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
     return this.service.enableDevice(user.sub, user.role, deviceId);
+  }
+
+  @Patch(':deviceId/unlock')
+  @RequirePermissions('devices.manage')
+  @ApiOperation({
+    summary: 'End a sign-in lock now (after too many wrong PINs or passwords)',
+  })
+  async unlock(@User() user: Payload, @Param() { deviceId }: DeviceIdParam) {
+    // Scoped to the owner's company; the super admin reaches every device.
+    const device = await this.service.getOne(
+      { id: deviceId },
+      user.sub,
+      user.role,
+    );
+    return this.signInLock.unlock(device);
   }
 
   @Patch(':deviceId/disable')
