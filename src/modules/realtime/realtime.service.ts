@@ -11,6 +11,7 @@ import { Cart } from '../cart/entities/cart.entity';
 import { Item } from '../item/entities/item.entity';
 import { RealtimeGateway } from './realtime.gateway';
 import { RealtimeEvent, Rooms } from './realtime.events';
+import { DEVICE_NOT_YOURS } from '../device/device-access';
 import { DisplayCart } from './display-cart';
 import { Payload } from 'src/util/token.service';
 import { kitchenOrder } from '../order/kitchen-order';
@@ -180,6 +181,11 @@ export class RealtimeService {
     });
     await this.gateway.detachTerminal(deviceId);
     await this.gateway.revokeDeviceSessions(deviceId, 'Device was removed');
+  }
+
+  // Who may use these devices changed: anyone now kept off is signed out at once.
+  deviceAccessChanged(deviceIds: string[]) {
+    return this.gateway.recheckDeviceAccess(deviceIds, DEVICE_NOT_YOURS);
   }
 
   // The user's status, role or role assignment changed.

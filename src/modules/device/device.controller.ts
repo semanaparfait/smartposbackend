@@ -9,6 +9,7 @@ import {
   Post,
   Headers,
   ParseEnumPipe,
+  ParseUUIDPipe,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -35,6 +36,8 @@ import { UpdateDeviceMomoCodeDto } from './dto/request/update-device-momo-code.d
 import { UpdateDeviceStationDto } from './dto/request/update-device-station.dto';
 import { RequirePermissions } from 'src/common/decorators/permissions.decorator';
 import { SignInLockService } from './sign-in-lock.service';
+import { UpdateDeviceUsersDto } from './dto/request/update-device-users.dto';
+import { Feature } from 'src/common/decorators/feature.decorator';
 
 @ApiTags('Devices')
 @UseGuards(AuthGuard, RolesGuard)
@@ -107,6 +110,23 @@ export class DeviceController {
     @Body() dto: UpdateDeviceTypeDto,
   ) {
     return this.service.setType(user.sub, user.role, deviceId, dto);
+  }
+
+  @Patch(':deviceId/allowed-users')
+  @RequirePermissions('devices.manage')
+  @Feature('deviceAccess')
+  @ApiOperation({ summary: 'Choose who can sign in on this device' })
+  setAllowedUsers(
+    @User() user: Payload,
+    @Param() { deviceId }: DeviceIdParam,
+    @Body() dto: UpdateDeviceUsersDto,
+  ) {
+    return this.service.setAllowedUsers(
+      user.sub,
+      user.role,
+      deviceId,
+      dto.userIds,
+    );
   }
 
   @Patch(':deviceId/momo-code')
@@ -192,6 +212,11 @@ export class DeviceController {
     enum: RegistrationStatusEnum,
     description: 'e.g. PENDING for registration requests awaiting a decision',
   })
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    description: 'Super admin only: the devices of one company',
+  })
   findAll(
     @User() user: Payload,
     @Query(
@@ -199,8 +224,10 @@ export class DeviceController {
       new ParseEnumPipe(RegistrationStatusEnum, { optional: true }),
     )
     status?: RegistrationStatusEnum,
+    @Query('companyId', new ParseUUIDPipe({ optional: true }))
+    companyId?: string,
   ) {
-    return this.service.findAll(user.sub, user.role, status);
+    return this.service.findAll(user.sub, user.role, status, companyId);
   }
 
   @Get(':deviceId/activities')

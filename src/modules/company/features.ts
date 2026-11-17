@@ -7,6 +7,8 @@ export const FEATURES = {
   floorMap: 'Floor map & tables',
   kitchen: 'Kitchen screen',
   barcode: 'Barcode scanning',
+  // Owners choose which staff may sign in on each device.
+  deviceAccess: 'Choose who uses each device',
 } as const;
 
 export type FeatureKey = keyof typeof FEATURES;
@@ -21,6 +23,7 @@ export const NO_FEATURES: CompanyFeatures = {
   floorMap: false,
   kitchen: false,
   barcode: false,
+  deviceAccess: false,
 };
 
 // What a new company starts with: supermarkets scan barcodes from day one;

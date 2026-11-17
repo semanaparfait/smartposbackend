@@ -27,4 +27,9 @@ export class CompanyFeaturesDto {
   @IsOptional()
   @IsBoolean()
   barcode?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  deviceAccess?: boolean;
 }

@@ -37,6 +37,7 @@ import {
   SIGNED_IN_ELSEWHERE,
 } from '../permissions/account';
 import { Payload } from 'src/util/token.service';
+import { DEVICE_NOT_YOURS } from 'src/modules/device/device-access';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -90,6 +91,10 @@ export class RolesGuard implements CanActivate {
         throw new UnauthorizedException(
           `Device is ${status ? status.toLowerCase() : 'removed'}, please login again`,
         );
+
+      // Taken off this device by the owner: signed out on their next request.
+      if (account.device?.keepsOut)
+        throw new UnauthorizedException(DEVICE_NOT_YOURS);
 
       // Checked here, so DeviceActivityInterceptor need not look again.
       request[DEVICE_CHECKED] = true;

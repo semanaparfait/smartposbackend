@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, Repository } from 'typeorm';
+import { FindOptionsWhere, In, Repository } from 'typeorm';
 import {
   Device,
   RegistrationStatusEnum,
@@ -342,6 +342,46 @@ export class DeviceService {
     return this.saveAndNotify(device);
   }
 
+  // Who may sign in on this device ([] = anyone on the staff). Only this
+  // company's staff can be chosen; owners always can. Logged on the device.
+  async setAllowedUsers(
+    userId: string,
+    role: UserRole,
+    deviceId: string,
+    userIds: string[],
+  ) {
+    const device = await this.getById(deviceId, userId, role);
+    const ids = [...new Set(userIds)];
+    const staff = ids.length
+      ? await this.deviceRepo.manager.getRepository(User).find({
+          where: {
+            id: In(ids),
+            role: UserRole.EMPLOYEE,
+            company: { id: device.company?.id },
+          },
+          select: { id: true, name: true },
+        })
+      : [];
+    if (staff.length !== ids.length)
+      throw new BadRequestException('Choose people who work in this company');
+
+    device.allowedUserIds = ids;
+    const saved = await this.saveAndNotify(device);
+    // Whoever is signed in here and no longer allowed is signed out at once.
+    await this.realtime.deviceAccessChanged([device.id]);
+
+    await this.activityRepo.insert({
+      device: { id: device.id },
+      user: { id: userId },
+      action: 'Changed who can use this device',
+      message: staff.length
+        ? `Only ${staff.map((s) => s.name).join(', ')}`
+        : 'Anyone on the staff',
+    });
+
+    return saved;
+  }
+
   async setMomoCode(
     userId: string,
     role: UserRole,
@@ -417,12 +457,15 @@ export class DeviceService {
     userId: string,
     role: UserRole,
     status?: RegistrationStatusEnum,
+    // Super admin only (owners always get their own company).
+    companyId?: string,
   ) {
     const company = await this.getUserCompany(userId, role);
+    const scope = company?.id ?? companyId;
 
     return await this.deviceRepo.find({
       where: {
-        ...(company ? { company: { id: company.id } } : {}),
+        ...(scope ? { company: { id: scope } } : {}),
         ...(status ? { registrationStatus: status } : {}),
       },
       relations: { company: true, currentUser: true, displayFor: true },

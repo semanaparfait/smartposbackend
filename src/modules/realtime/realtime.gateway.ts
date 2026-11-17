@@ -28,6 +28,7 @@ import {
   RegistrationStatusEnum,
 } from '../device/entities/device.entity';
 import { deviceSecretMatches } from '../device/device-secret';
+import { DEVICE_NOT_YOURS } from '../device/device-access';
 import { Payload } from 'src/util/token.service';
 import { RealtimeEvent, Rooms } from './realtime.events';
 import { sanitizeDisplayCart } from './display-cart';
@@ -203,6 +204,28 @@ export class RealtimeGateway
     }
   }
 
+  // The owner changed who may use these devices (or the company turned the
+  // extra on): signs out, at once, whoever is on one and no longer allowed.
+  // Uses the same rule as every request (loadAccount), so owners stay.
+  async recheckDeviceAccess(deviceIds: string[], reason: string) {
+    if (!this.server || !deviceIds.length) return;
+
+    const sockets = await this.server
+      .in(deviceIds.map((id) => Rooms.device(id)))
+      .fetchSockets();
+
+    for (const socket of sockets) {
+      const { kind, userId, deviceId } = socket.data as SocketData;
+      if (kind !== 'user' || !userId || !deviceId) continue;
+
+      const account = await loadAccount(this.dataSource, userId, deviceId);
+      if (!account?.device?.keepsOut) continue;
+
+      socket.emit(RealtimeEvent.SESSION_REVOKED, { reason });
+      socket.disconnect(true);
+    }
+  }
+
   async revokeOtherSessions(userId: string, sid: string, deviceId?: string) {
     if (!this.server) return;
 
@@ -356,9 +379,16 @@ export class RealtimeGateway
       throw new Error(`Unauthorized: ${(error as Error).message}`);
     }
 
-    const account = await loadAccount(this.dataSource, payload.sub);
+    const account = await loadAccount(
+      this.dataSource,
+      payload.sub,
+      payload.deviceId,
+    );
 
     if (!account) throw new Error('Unauthorized: user not found');
+
+    // The owner chose other staff for this device.
+    if (account.device?.keepsOut) throw new Error(DEVICE_NOT_YOURS);
 
     if (!account.active) throw new Error('Your account has been deactivated');
 

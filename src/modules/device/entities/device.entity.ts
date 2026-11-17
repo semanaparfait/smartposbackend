@@ -131,6 +131,16 @@ export class Device extends BaseEntity {
   @Column({ name: 'locked_until', type: 'timestamp', nullable: true })
   lockedUntil!: Date | null;
 
+  // With the company's "Choose who uses each device" extra on: the only staff
+  // (user ids) who may sign in here. Empty = anyone on the staff. Owners always can.
+  @Column({
+    name: 'allowed_user_ids',
+    type: 'uuid',
+    array: true,
+    default: () => "'{}'",
+  })
+  allowedUserIds!: string[];
+
   @OneToMany(() => DeviceActivity, (activity) => activity.device)
   activities!: DeviceActivity[];
 

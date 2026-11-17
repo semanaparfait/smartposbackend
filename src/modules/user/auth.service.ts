@@ -30,6 +30,7 @@ import { LoginThrottleService } from 'src/util/login-throttle.service';
 import { UserService } from './user.service';
 import { DeviceService } from '../device/device.service';
 import { SignInLockService } from '../device/sign-in-lock.service';
+import { DEVICE_NOT_YOURS, keepsOut } from '../device/device-access';
 import { RealtimeService } from '../realtime/realtime.service';
 import { randomUUID } from 'crypto';
 import { RefreshTokenService } from './refresh-token.service';
@@ -190,6 +191,10 @@ export class AuthService {
     }
 
     if (!authenticatedUser) return this.signInLock.failed(device, 'Wrong PIN');
+
+    // The owner chose who uses this device ("Choose who uses each device" extra).
+    if (keepsOut(device, authenticatedUser.id))
+      throw new ForbiddenException(DEVICE_NOT_YOURS);
 
     await this.signInLock.succeeded(device);
 

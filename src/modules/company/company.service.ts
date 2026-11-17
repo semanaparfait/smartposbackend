@@ -510,6 +510,15 @@ export class CompanyService {
       select: { id: true },
     });
     await this.realtime.usersChanged(users.map((u) => u.id));
+
+    // Turning "Choose who uses each device" on applies the owner's saved lists now.
+    if (changes.deviceAccess === true) {
+      const devices = await this.repo.manager.getRepository(Device).find({
+        where: { company: { id } },
+        select: { id: true },
+      });
+      await this.realtime.deviceAccessChanged(devices.map((d) => d.id));
+    }
     return { id, features };
   }
 

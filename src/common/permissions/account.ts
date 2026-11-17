@@ -24,6 +24,8 @@ export interface Account {
   device?: {
     status: RegistrationStatusEnum;
     type: DeviceTypeEnum;
+    // The owner chose other staff for this device (see device-access.ts).
+    keepsOut: boolean;
   } | null;
 }
 
@@ -47,15 +49,21 @@ export async function loadAccount(
     allow_multiple_devices: boolean;
     device_status: RegistrationStatusEnum | null;
     device_type: DeviceTypeEnum | null;
+    device_keeps_out: boolean | null;
   }[] = await dataSource.query(
     `SELECT u.name, u.active, u.role, u.company_id, u.session_id, u.allow_multiple_devices,
             r.id AS role_id, r.permissions,
             e.extra_permissions AS extra, e.removed_permissions AS removed,
-            d.registration_status AS device_status, d.type AS device_type
+            d.registration_status AS device_status, d.type AS device_type,
+            (u.role = 'EMPLOYEE'
+              AND (c.features->>'deviceAccess') = 'true'
+              AND cardinality(d.allowed_user_ids) > 0
+              AND NOT (u.id = ANY(d.allowed_user_ids))) AS device_keeps_out
        FROM users u
        LEFT JOIN employees e ON e.id = u.employee_id
        LEFT JOIN employee_roles r ON r.id = e.role_id
        LEFT JOIN devices d ON d.id = $2
+       LEFT JOIN companies c ON c.id = u.company_id
       WHERE u.id = $1`,
     [userId, deviceId ?? null],
   );
@@ -68,7 +76,11 @@ export async function loadAccount(
       deviceId === undefined
         ? undefined
         : row.device_status
-          ? { status: row.device_status, type: row.device_type! }
+          ? {
+              status: row.device_status,
+              type: row.device_type!,
+              keepsOut: row.device_keeps_out === true,
+            }
           : null,
     name: row.name,
     active: row.active,
