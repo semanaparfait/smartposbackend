@@ -173,7 +173,7 @@ export class DeviceController {
       user.sub,
       user.role,
     );
-    return this.signInLock.unlock(device);
+    return this.signInLock.unlock(device, user.sub);
   }
 
   @Patch(':deviceId/disable')

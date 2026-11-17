@@ -7,7 +7,9 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Device } from './entities/device.entity';
+import { DeviceActivity } from './entities/device-activity.entity';
 import { RealtimeService } from '../realtime/realtime.service';
+import { LoggerService } from 'src/common/logger/logger.service';
 
 // Wrong tries in a row before the device locks.
 export const MAX_SIGN_IN_TRIES = 5;
@@ -29,8 +31,31 @@ export class SignInLockService {
   constructor(
     @InjectRepository(Device)
     private readonly deviceRepo: Repository<Device>,
+    @InjectRepository(DeviceActivity)
+    private readonly activityRepo: Repository<DeviceActivity>,
     private readonly realtime: RealtimeService,
+    private readonly logger: LoggerService,
   ) {}
+
+  // Writes to the locked device's own log, so its owner sees wrong tries, the
+  // lock, and who unlocked it. Never fails the sign-in over a log row.
+  private async log(
+    device: Pick<Device, 'id'>,
+    action: string,
+    message: string | null,
+    userId: string | null = null,
+  ) {
+    await this.activityRepo
+      .insert({
+        device: { id: device.id },
+        user: userId ? { id: userId } : null,
+        action,
+        message,
+      })
+      .catch((error: Error) =>
+        this.logger.error('Failed to log sign-in lock', error.stack),
+      );
+  }
 
   private remainingMs(device: Pick<Device, 'lockedUntil'>) {
     return device.lockedUntil
@@ -94,6 +119,13 @@ export class SignInLockService {
     const attemptsLeft = Math.max(0, MAX_SIGN_IN_TRIES - failures);
 
     if (attemptsLeft > 0) {
+      await this.log(
+        device,
+        message,
+        attemptsLeft === 1
+          ? '1 try left before this device locks'
+          : `${attemptsLeft} tries left before this device locks`,
+      );
       const body = { statusCode: status, message, attemptsLeft };
       throw status === HttpStatus.UNAUTHORIZED
         ? new UnauthorizedException(body)
@@ -117,6 +149,7 @@ export class SignInLockService {
       message: string;
       retryAfter: number;
     };
+    await this.log(device, 'Device locked', lock.message);
     this.realtime.deviceLocked(
       {
         ...device,
@@ -136,9 +169,16 @@ export class SignInLockService {
     await this.reset(device);
   }
 
-  // Owner or super admin: lets staff try again now.
-  async unlock(device: Device) {
+  // Owner or super admin: lets staff try again now. `byUserId` is who did it,
+  // shown in the device log.
+  async unlock(device: Device, byUserId: string) {
     await this.reset(device);
+    await this.log(
+      device,
+      'Device unlocked',
+      'Staff can sign in again',
+      byUserId,
+    );
     const unlocked = Object.assign(device, {
       failedSignIns: 0,
       lockCount: 0,

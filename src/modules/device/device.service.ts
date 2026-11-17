@@ -14,6 +14,7 @@ import {
   deviceMomoCode,
 } from './entities/device.entity';
 import { DeviceActivity } from './entities/device-activity.entity';
+import { plainAction } from './activity-text';
 import { CreateDeviceDto } from './dto/request/create-device.dto';
 import { CompanyService } from '../company/company.service';
 import { User, UserRole } from '../user/entities/user.entity';
@@ -171,6 +172,7 @@ export class DeviceService {
       method: string;
       path: string;
       statusCode: number;
+      message: string | null;
     },
     logActivity: boolean,
   ) {
@@ -199,12 +201,21 @@ export class DeviceService {
   ) {
     const device = await this.getById(deviceId, userId, role);
 
-    return this.activityRepo.find({
+    const logs = await this.activityRepo.find({
       where: { device: { id: device.id } },
       relations: { user: true },
       order: { createdAt: 'DESC' },
       take: Math.min(Math.max(limit, 1), 500),
     });
+    // Only the super admin sees the endpoint behind each entry.
+    if (role === UserRole.SUPERADMIN) return logs;
+    return logs.map((log) =>
+      Object.assign(log, {
+        action: plainAction(log.action),
+        method: null,
+        path: null,
+      }),
+    );
   }
 
   async requestRegistration(dto: CreateDeviceDto) {

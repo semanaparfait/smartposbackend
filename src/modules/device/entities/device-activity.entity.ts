@@ -28,4 +28,9 @@ export class DeviceActivity extends BaseEntity {
 
   @Column({ name: 'status_code', type: 'int', nullable: true })
   statusCode!: number;
+
+  // What the server said, e.g. 'Wrong PIN' or 'Not enough stock'. Shown to owners
+  // in place of the endpoint and status code.
+  @Column({ type: 'varchar', nullable: true })
+  message!: string | null;
 }
