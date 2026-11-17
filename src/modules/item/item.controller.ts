@@ -1,3 +1,4 @@
+import { Feature } from 'src/common/decorators/feature.decorator';
 import {
   Controller,
   Post,
@@ -49,6 +50,7 @@ export class ItemController {
   }
 
   @Post(':cartId/item/productCode')
+  @Feature('barcode')
   @ApiOperation({ summary: 'Add item to cart by BarCode' })
   async addItemByCode(
     @User() user: Payload,

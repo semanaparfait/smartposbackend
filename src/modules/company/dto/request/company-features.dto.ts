@@ -22,4 +22,9 @@ export class CompanyFeaturesDto {
   @IsOptional()
   @IsBoolean()
   kitchen?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  barcode?: boolean;
 }

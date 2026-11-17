@@ -20,7 +20,12 @@ import {
   Device,
   RegistrationStatusEnum,
 } from '../device/entities/device.entity';
-import { CompanyFeatures, FEATURES, featuresOf } from './features';
+import {
+  CompanyFeatures,
+  FEATURES,
+  featuresOf,
+  startingFeatures,
+} from './features';
 import { SubscriptionPayment } from './entities/subscription-payment.entity';
 import {
   InboxItem,
@@ -54,7 +59,10 @@ export class CompanyService {
   ) {}
 
   async create(dto: CreateCompanyDto) {
-    const company = this.repo.create(dto);
+    const company = this.repo.create({
+      ...dto,
+      features: startingFeatures(dto.type),
+    });
     return this.repo.save(company);
   }
 

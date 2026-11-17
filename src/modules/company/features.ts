@@ -6,6 +6,7 @@ export const FEATURES = {
   delivery: 'Delivery',
   floorMap: 'Floor map & tables',
   kitchen: 'Kitchen screen',
+  barcode: 'Barcode scanning',
 } as const;
 
 export type FeatureKey = keyof typeof FEATURES;
@@ -19,7 +20,15 @@ export const NO_FEATURES: CompanyFeatures = {
   delivery: false,
   floorMap: false,
   kitchen: false,
+  barcode: false,
 };
+
+// What a new company starts with: supermarkets scan barcodes from day one;
+// anyone else asks SmartPOS and the super admin turns it on.
+export const startingFeatures = (type?: string | null): CompanyFeatures => ({
+  ...NO_FEATURES,
+  barcode: type === 'SUPERMARKET',
+});
 
 // Saved values, with any extra added later counted as off.
 export const featuresOf = (saved?: Partial<CompanyFeatures> | null) => ({
